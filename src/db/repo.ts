@@ -7,6 +7,7 @@ import type {
   Kind,
   SettingRow,
   Transaction,
+  TransactionAmount,
   TransactionInput,
   TransactionWithCategory,
 } from './types';
@@ -45,6 +46,13 @@ export function listTransactionsInRange(
      ORDER BY t.occurred_at DESC`,
     start,
     end,
+  );
+}
+
+/** Minimal rows for every live transaction, used to total the month and year strips. */
+export function listTransactionAmounts(db: SQLiteDatabase): Promise<TransactionAmount[]> {
+  return db.getAllAsync<TransactionAmount>(
+    'SELECT kind, amount, occurred_at FROM transactions WHERE deleted_at IS NULL ORDER BY occurred_at',
   );
 }
 
@@ -143,3 +151,5 @@ export async function setSetting(db: SQLiteDatabase, key: string, value: string)
 }
 
 export const SETTING_SHOW_INCOME = 'show_income';
+/** Day of the month where the home "month" starts (1–28). */
+export const SETTING_PERIOD_START_DAY = 'period_start_day';

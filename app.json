@@ -37,7 +37,8 @@
           "imageWidth": 160,
           "backgroundColor": "#FAFAFA"
         }
-      ]
+      ],
+      "expo-secure-store"
     ]
   }
 }

@@ -1,59 +1,22 @@
-import { Feather } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { type ComponentProps, type ReactNode, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Switch, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '../src/components/AppText';
 import { IconButton } from '../src/components/IconButton';
+import { SettingsRow } from '../src/components/SettingsRow';
 import { getSetting, setSetting, SETTING_SHOW_INCOME } from '../src/db/repo';
 import { exportBackup, pickAndImportBackup } from '../src/lib/backup';
-import { colors, radius } from '../src/theme';
-
-type IconName = ComponentProps<typeof Feather>['name'];
-
-function Row({
-  icon,
-  title,
-  subtitle,
-  onPress,
-  right,
-}: {
-  icon: IconName;
-  title: string;
-  subtitle?: string;
-  onPress?: () => void;
-  right?: ReactNode;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={!onPress}
-      style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-    >
-      <View style={styles.rowIcon}>
-        <Feather name={icon} size={18} color={colors.text} />
-      </View>
-      <View style={styles.rowTexts}>
-        <AppText weight="semibold" size={15}>
-          {title}
-        </AppText>
-        {subtitle && (
-          <AppText size={12} color={colors.textMuted}>
-            {subtitle}
-          </AppText>
-        )}
-      </View>
-      {right}
-    </Pressable>
-  );
-}
+import { useLock } from '../src/security/LockProvider';
+import { colors } from '../src/theme';
 
 export default function SettingsScreen() {
   const db = useSQLiteContext();
   const insets = useSafeAreaInsets();
+  const { config } = useLock();
   const [showIncome, setShowIncome] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -95,24 +58,30 @@ export default function SettingsScreen() {
     }
   };
 
+  const securitySubtitle = !config?.pinEnabled
+    ? 'Sin bloqueo'
+    : config.biometricsEnabled
+      ? 'PIN y huella'
+      : 'PIN';
+
   return (
     <View style={[styles.screen, { paddingTop: insets.top + 8 }]}>
       <View style={styles.header}>
-        <AppText weight="extrabold" size={26}>
+        <AppText weight="extrabold" size={28}>
           Configuración
         </AppText>
-        <IconButton icon="x" label="Cerrar" background={colors.chip} onPress={() => router.back()} />
+        <IconButton icon="x" label="Cerrar" background={colors.surface} style={styles.close} onPress={() => router.back()} />
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}>
-        <AppText size={13} color={colors.textMuted} style={styles.sectionTitle}>
-          Vista
+        <AppText weight="semibold" size={13} color={colors.textMuted} style={styles.sectionTitle}>
+          Contenido
         </AppText>
-        <View style={styles.card}>
-          <Row
-            icon="trending-up"
+        <View style={styles.section}>
+          <SettingsRow
+            emoji="➕"
             title="Mostrar ingresos"
-            subtitle="El total muestra el balance del mes (ingresos − gastos)"
+            subtitle="El total muestra el balance (ingresos − gastos)"
             right={
               <Switch
                 value={showIncome}
@@ -122,27 +91,32 @@ export default function SettingsScreen() {
               />
             }
           />
-        </View>
-
-        <AppText size={13} color={colors.textMuted} style={styles.sectionTitle}>
-          Respaldo
-        </AppText>
-        <View style={styles.card}>
-          <Row
-            icon="upload"
-            title="Exportar respaldo (JSON)"
-            subtitle="Guárdalo en Google Drive para cambiar de celular"
+          <SettingsRow
+            emoji="📤"
+            title="Exportar respaldo"
+            subtitle="Archivo JSON para guardar en Google Drive"
             onPress={busy ? undefined : runExport}
           />
-          <View style={styles.divider} />
-          <Row
-            icon="download"
-            title="Importar respaldo (JSON)"
+          <SettingsRow
+            emoji="📥"
+            title="Importar respaldo"
             subtitle="Se combina con tus datos, sin duplicar"
             onPress={busy ? undefined : runImport}
           />
         </View>
         {busy && <ActivityIndicator style={styles.spinner} color={colors.textMuted} />}
+
+        <AppText weight="semibold" size={13} color={colors.textMuted} style={styles.sectionTitle}>
+          Privacidad
+        </AppText>
+        <View style={styles.section}>
+          <SettingsRow
+            emoji="🔒"
+            title="Seguridad"
+            subtitle={securitySubtitle}
+            onPress={() => router.push('/security')}
+          />
+        </View>
 
         <AppText size={12} color={colors.textMuted} style={styles.footer}>
           My Financial AI v{Constants.expoConfig?.version ?? '0.1.0'} · Tus datos viven solo en este celular.
@@ -164,43 +138,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 8,
   },
+  close: {
+    elevation: 2,
+  },
   sectionTitle: {
     paddingHorizontal: 24,
     paddingTop: 20,
-    paddingBottom: 8,
+    paddingBottom: 6,
   },
-  card: {
-    marginHorizontal: 16,
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    overflow: 'hidden',
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-  },
-  rowPressed: {
-    backgroundColor: colors.chip,
-  },
-  rowIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: radius.sm,
-    backgroundColor: colors.chip,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  rowTexts: {
-    flex: 1,
-    gap: 2,
-  },
-  divider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: colors.border,
-    marginLeft: 62,
+  section: {
+    paddingHorizontal: 8,
   },
   spinner: {
     marginTop: 16,

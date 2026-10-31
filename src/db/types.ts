@@ -40,6 +40,13 @@ export interface TransactionWithCategory extends Transaction {
   category_color: string | null;
 }
 
+/** Just enough to total periods without loading every column. */
+export interface TransactionAmount {
+  kind: Kind;
+  amount: number;
+  occurred_at: number;
+}
+
 export interface SettingRow {
   key: string;
   value: string;
