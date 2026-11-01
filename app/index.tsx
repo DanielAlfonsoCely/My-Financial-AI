@@ -1,33 +1,35 @@
 import { Feather } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { Redirect, router } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useMemo, useRef, useState } from 'react';
-import {
-  Alert,
-  type HostInstance,
-  Pressable,
-  SectionList,
-  StyleSheet,
-  useWindowDimensions,
-  View,
-} from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { AppState, type HostInstance, Pressable, SectionList, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AccountsPanel } from '../src/components/accounts/AccountsPanel';
 import { AppText } from '../src/components/AppText';
-import { CategoryBars, EmptyBars } from '../src/components/CategoryBars';
+import { type BarPress, CategoryBars, EmptyBars } from '../src/components/CategoryBars';
 import { DefaultPeriodSheet } from '../src/components/home/DefaultPeriodSheet';
 import { PeriodStrip, type StripItem } from '../src/components/home/PeriodStrip';
 import { RangeSheet } from '../src/components/home/RangeSheet';
+import { SearchBar, type SearchQuery } from '../src/components/home/SearchBar';
 import { IconButton } from '../src/components/IconButton';
 import { Pager } from '../src/components/Pager';
 import { type Anchor, type MenuItem, PopoverMenu } from '../src/components/PopoverMenu';
 import { TransactionRow } from '../src/components/TransactionRow';
-import { setSetting, SETTING_PERIOD_START_DAY } from '../src/db/repo';
+import {
+  getSetting,
+  materializeRecurring,
+  setSetting,
+  SETTING_CURRENT_LIST,
+  SETTING_ONBOARDING_DONE,
+  SETTING_PERIOD_START_DAY,
+} from '../src/db/repo';
 import type { Kind, TransactionAmount, TransactionWithCategory } from '../src/db/types';
-import { sumRange, useAmountIndex, useHomeSettings, usePeriodData } from '../src/hooks/useHomeData';
+import { listLabel, useCurrentList, useQuery } from '../src/hooks/useData';
+import { type CategoryTotal, sumRange, useAmountIndex, useHomeSettings, usePeriodData } from '../src/hooks/useHomeData';
+import { useKeyboardInset } from '../src/hooks/useKeyboardInset';
 import { dayLabel, startOfDay } from '../src/lib/dates';
-import { formatAmount, formatMoney } from '../src/lib/money';
+import { formatAmount, formatCompact, formatMoney } from '../src/lib/money';
 import {
   currentMonthPeriod,
   monthPeriodLabel,
@@ -37,6 +39,8 @@ import {
   rangeLabel,
   shiftMonth,
 } from '../src/lib/period';
+import { parseTags } from '../src/lib/tags';
+import { matchesAllWords } from '../src/lib/text';
 import { colors, radius } from '../src/theme';
 
 interface DaySection {
@@ -52,7 +56,7 @@ function groupByDay(transactions: TransactionWithCategory[]): DaySection[] {
     const day = startOfDay(new Date(t.occurred_at));
     if (day.getTime() !== currentKey) {
       currentKey = day.getTime();
-      sections.push({ title: dayLabel(day), total: 0, data: [] });
+      sections.push({ title: dayLabel(day).toLowerCase(), total: 0, data: [] });
     }
     const section = sections[sections.length - 1];
     section.data.push(t);
@@ -65,28 +69,44 @@ function signedMoney(value: number): string {
   return `${value < 0 ? '-' : ''}${formatMoney(Math.abs(value))}`;
 }
 
-function soon(what: string) {
-  Alert.alert('Próximamente', `${what} llega en una próxima versión.`);
+/** Text, categories and tags combined (Video Yt/25–26). Every word and every tag must match. */
+function matchesSearch(t: TransactionWithCategory, query: SearchQuery): boolean {
+  const tags = parseTags(t.tags);
+  if (!query.tags.every((tag) => tags.includes(tag))) return false;
+  const text = query.text.trim();
+  if (!text) return true;
+  return matchesAllWords(`${t.title} ${t.category_name ?? ''} ${tags.join(' ')}`, text);
 }
 
 /** Measures a view on screen so a PopoverMenu can open right under it. */
 function useAnchor() {
   const ref = useRef<HostInstance>(null);
   const [anchor, setAnchor] = useState<Anchor | null>(null);
-  const open = () =>
-    ref.current?.measureInWindow((x, y, width, height) => setAnchor({ x, y, width, height }));
-  return { ref, anchor, open, close: () => setAnchor(null) };
+  const open = () => ref.current?.measureInWindow((x, y, width, height) => setAnchor({ x, y, width, height }));
+  return { ref, anchor, open, setAnchor, close: () => setAnchor(null) };
 }
 
 export default function HomeScreen() {
+  const db = useSQLiteContext();
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [page, setPage] = useState(0);
+  const onboarding = useQuery(() => getSetting(db, SETTING_ONBOARDING_DONE), null as string | null, [db]);
+
+  // Recurring transactions are created when the app opens and every time it comes back.
+  useEffect(() => {
+    materializeRecurring(db).catch(() => undefined);
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') materializeRecurring(db).catch(() => undefined);
+    });
+    return () => sub.remove();
+  }, [db]);
+
+  if (onboarding.loaded && onboarding.data !== 'true') return <Redirect href="/onboarding" />;
 
   return (
     <View style={styles.screen}>
       <Pager width={width} pages={[<HomePage key="home" width={width} />, <AccountsPanel key="accounts" width={width} />]} onPageChange={setPage} />
-
       {/* Two dots so it is obvious there is a second panel to the right. */}
       <View style={[styles.pageDots, { top: insets.top + 26 }]} pointerEvents="none">
         {[0, 1].map((i) => (
@@ -97,11 +117,16 @@ export default function HomeScreen() {
   );
 }
 
+type KindFilter = 'all' | Kind;
+const KIND_FILTER_LABEL: Record<KindFilter, string> = { all: 'Ingresos y gastos', expense: 'Solo gastos', income: 'Solo ingresos' };
+
 function HomePage({ width }: { width: number }) {
   const db = useSQLiteContext();
   const insets = useSafeAreaInsets();
+  const keyboard = useKeyboardInset();
   const settings = useHomeSettings();
-  const amounts = useAmountIndex();
+  const { listId, list, lists } = useCurrentList();
+  const amounts = useAmountIndex(listId);
 
   // null = default period (the current month, starting on the chosen day).
   const [period, setPeriod] = useState<Period | null>(null);
@@ -110,23 +135,74 @@ function HomePage({ width }: { width: number }) {
   const [categoryFilter, setCategoryFilter] = useState<string | null | undefined>(undefined);
   const [rangeOpen, setRangeOpen] = useState(false);
   const [defaultOpen, setDefaultOpen] = useState(false);
+  const [search, setSearch] = useState<SearchQuery | null>(null);
+  const [kindFilter, setKindFilter] = useState<KindFilter>('all');
+  const [barMenu, setBarMenu] = useState<{ anchor: Anchor; item: CategoryTotal } | null>(null);
   const periodMenu = useAnchor();
   const listMenu = useAnchor();
+  const kindMenu = useAnchor();
+
+  // Switching lists starts clean.
+  useEffect(() => {
+    setCategoryFilter(undefined);
+    setSearch(null);
+  }, [listId]);
 
   const effective = period ?? currentMonthPeriod(settings.startDay);
   const range = periodRange(effective);
-  const data = usePeriodData(range);
+  const isMonth = effective.mode === 'month';
+  const data = usePeriodData(listId, range, isMonth);
 
   const activeKind: Kind = settings.showIncome ? kind : 'expense';
   const bars = data.byCategory[activeKind];
   const kindTotal = activeKind === 'income' ? data.incomeTotal : data.expenseTotal;
-  const balance = data.incomeTotal - data.expenseTotal;
   const selectedBar = categoryFilter === undefined ? undefined : bars.find((b) => b.categoryId === categoryFilter);
+  const searching = search !== null;
 
-  // Selecting a column shows that category's total, like MonAi.
-  const headline = selectedBar ? selectedBar.total : settings.showIncome ? balance : data.expenseTotal;
-  const headlinePositive = selectedBar ? activeKind === 'income' : settings.showIncome ? balance >= 0 : false;
-  const signColor = !settings.showIncome && !selectedBar ? colors.textFaint : headlinePositive ? colors.income : colors.accent;
+  // ---- Headline ----
+  const searchResults = useMemo(() => {
+    if (!search) return [];
+    return data.transactions.filter(
+      (t) => (kindFilter === 'all' || t.kind === kindFilter) && matchesSearch(t, search),
+    );
+  }, [data.transactions, search, kindFilter]);
+
+  let headline: number;
+  let positive: boolean;
+  if (searching) {
+    const expense = searchResults.filter((t) => t.kind === 'expense').reduce((s, t) => s + t.amount, 0);
+    const income = searchResults.filter((t) => t.kind === 'income').reduce((s, t) => s + t.amount, 0);
+    const net = kindFilter === 'income' ? income : kindFilter === 'expense' ? -expense : income - expense;
+    headline = Math.abs(net);
+    positive = net > 0;
+  } else if (selectedBar) {
+    // Selecting a column shows that category's total, like MonAi (TikTok/19).
+    headline = selectedBar.total;
+    positive = activeKind === 'income';
+  } else if (settings.showIncome) {
+    // "Acumulado": everything up to the end of the period, not only the period.
+    const balance = settings.accumulated
+      ? sumRange(amounts, 0, range ? range[1] : Number.MAX_SAFE_INTEGER).balance
+      : data.incomeTotal - data.expenseTotal;
+    headline = Math.abs(balance);
+    positive = balance >= 0;
+  } else {
+    headline = data.expenseTotal;
+    positive = false;
+  }
+  const neutral = !settings.showIncome && !selectedBar && !searching;
+  const signColor = neutral ? colors.textFaint : positive ? colors.income : colors.accent;
+
+  // ---- Budget line: "$218.650 sobre presupuesto" (TikTok/12) ----
+  const budgetLine = useMemo(() => {
+    if (!isMonth || searching || activeKind !== 'expense') return null;
+    const withBudget = data.byCategory.expense.filter((c) => (c.budget ?? 0) > 0);
+    if (withBudget.length === 0) return null;
+    const over = withBudget.reduce((s, c) => s + Math.max(0, c.total - (c.budget ?? 0)), 0);
+    if (over > 0) return { amount: over, text: 'sobre presupuesto', danger: true };
+    const left = withBudget.reduce((s, c) => s + Math.max(0, (c.budget ?? 0) - c.total), 0);
+    return { amount: left, text: 'restante del presupuesto', danger: false };
+  }, [isMonth, searching, activeKind, data.byCategory.expense]);
 
   const changePeriod = (next: Period | null) => {
     setCategoryFilter(undefined);
@@ -139,12 +215,13 @@ function HomePage({ width }: { width: number }) {
   };
 
   const sections = useMemo(() => {
+    if (searching) return groupByDay(searchResults);
     const filtered =
       categoryFilter === undefined
         ? data.transactions
         : data.transactions.filter((t) => t.kind === activeKind && t.category_id === categoryFilter);
     return groupByDay(filtered);
-  }, [data.transactions, categoryFilter, activeKind]);
+  }, [searching, searchResults, data.transactions, categoryFilter, activeKind]);
 
   const strip = useMemo(
     () => buildStrip(period, amounts, settings.startDay, settings.showIncome, changePeriod, () => setRangeOpen(true)),
@@ -152,13 +229,14 @@ function HomePage({ width }: { width: number }) {
     [period, amounts, settings.startDay, settings.showIncome],
   );
 
+  // ---- Menus ----
   const periodItems: MenuItem[] = [
     {
       key: 'month',
       label: 'Mes',
       icon: 'calendar',
-      checked: effective.mode === 'month',
-      onPress: () => changePeriod(effective.mode === 'month' ? effective : currentMonthPeriod(settings.startDay)),
+      checked: isMonth,
+      onPress: () => changePeriod(isMonth ? effective : currentMonthPeriod(settings.startDay)),
     },
     {
       key: 'year',
@@ -172,17 +250,88 @@ function HomePage({ width }: { width: number }) {
     { key: 'default', label: 'Cambiar período predeterminado', icon: 'sliders', separated: true, onPress: () => setDefaultOpen(true) },
   ];
 
-  const listItems: MenuItem[] = [
-    { key: 'personal', label: 'Personal', checked: true, onPress: () => {} },
-    { key: 'new', label: 'Nueva lista', icon: 'plus', separated: true, onPress: () => soon('Crear listas') },
-  ];
+  const listItems: MenuItem[] = lists.map((l) => ({
+    key: l.id,
+    label: listLabel(l),
+    checked: l.id === listId,
+    onPress: () => {
+      changePeriod(null);
+      setSetting(db, SETTING_CURRENT_LIST, l.id);
+    },
+  }));
 
+  const listFooter = (
+    <View style={styles.listActions}>
+      <Pressable
+        style={styles.listAction}
+        onPress={() => {
+          listMenu.close();
+          router.push('/lists');
+        }}
+      >
+        <Feather name="edit-2" size={18} color={colors.text} />
+        <AppText weight="semibold" size={13}>
+          Editar
+        </AppText>
+      </Pressable>
+      <Pressable
+        style={styles.listAction}
+        onPress={() => {
+          listMenu.close();
+          router.push('/list-edit');
+        }}
+      >
+        <Feather name="plus" size={18} color={colors.text} />
+        <AppText weight="semibold" size={13}>
+          Nueva
+        </AppText>
+      </Pressable>
+    </View>
+  );
+
+  const kindItems: MenuItem[] = (['all', 'expense', 'income'] as const).map((k) => ({
+    key: k,
+    label: KIND_FILTER_LABEL[k],
+    checked: kindFilter === k,
+    onPress: () => setKindFilter(k),
+  }));
+
+  const openBarMenu = ({ item, pageX, pageY }: BarPress) => {
+    if (!item.categoryId) return;
+    // Opens above the finger, like MonAi.
+    setBarMenu({ anchor: { x: pageX - 110, y: pageY - 170, width: 0, height: 0 }, item });
+  };
+
+  const barMenuItems: MenuItem[] = barMenu
+    ? [
+        {
+          key: 'budget',
+          label: barMenu.item.budget ? 'Editar presupuesto' : 'Añadir presupuesto',
+          icon: 'arrow-up',
+          subtitle: barMenu.item.budget
+            ? barMenu.item.total > barMenu.item.budget
+              ? `$${formatCompact(barMenu.item.total - barMenu.item.budget)} excedido`
+              : `$${formatCompact(barMenu.item.budget - barMenu.item.total)} restante`
+            : `${formatMoney(barMenu.item.total)} este mes`,
+          onPress: () => router.push({ pathname: '/budget', params: { categoryId: barMenu.item.categoryId ?? '' } }),
+        },
+        {
+          key: 'new',
+          label: 'Nueva transacción',
+          icon: 'arrow-down',
+          onPress: () =>
+            router.push({ pathname: '/transaction', params: { categoryId: barMenu.item.categoryId ?? '', kind: barMenu.item.kind } }),
+        },
+      ]
+    : [];
+
+  // ---- Header ----
   const header = (
     <View>
       <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
         <Pressable ref={listMenu.ref} onPress={listMenu.open} style={styles.listChip} hitSlop={6}>
-          <AppText weight="bold" size={15}>
-            Personal
+          <AppText weight="bold" size={15} numberOfLines={1} style={styles.listName}>
+            {listLabel(list)}
           </AppText>
           <Feather name="chevron-down" size={16} color={colors.text} />
         </Pressable>
@@ -206,14 +355,23 @@ function HomePage({ width }: { width: number }) {
       )}
 
       <View style={styles.totals}>
+        {budgetLine && !selectedBar && (
+          <AppText size={12} color={colors.textMuted}>
+            <AppText weight="bold" size={12} color={budgetLine.danger ? colors.danger : colors.textMuted}>
+              {formatMoney(budgetLine.amount)}
+            </AppText>{' '}
+            {budgetLine.text}
+          </AppText>
+        )}
         {selectedBar && (
           <AppText weight="semibold" size={13} color={colors.textMuted}>
             {selectedBar.emoji} {selectedBar.name}
+            {selectedBar.budget ? ` · ${Math.round((selectedBar.total / selectedBar.budget) * 100)}% de ${formatMoney(selectedBar.budget)}` : ''}
           </AppText>
         )}
         <View style={styles.totalRow}>
           <View style={[styles.signDot, { backgroundColor: signColor }]}>
-            <Feather name={headlinePositive ? 'plus' : 'minus'} size={14} color={colors.surface} />
+            <Feather name={positive ? 'plus' : 'minus'} size={14} color={colors.surface} />
           </View>
           <AppText weight="extrabold" size={58} style={styles.totalNumber} adjustsFontSizeToFit numberOfLines={1}>
             {formatAmount(headline)}
@@ -223,41 +381,51 @@ function HomePage({ width }: { width: number }) {
           </AppText>
         </View>
 
-        {settings.showIncome && (
-          <View style={styles.kinds}>
-            <KindToggle
-              kind="expense"
-              amount={data.expenseTotal}
-              selected={activeKind === 'expense'}
-              onPress={() => changeKind('expense')}
-            />
-            <KindToggle
-              kind="income"
-              amount={data.incomeTotal}
-              selected={activeKind === 'income'}
-              onPress={() => changeKind('income')}
-            />
-          </View>
+        {searching ? (
+          <Pressable ref={kindMenu.ref} onPress={kindMenu.open} style={styles.filterChip}>
+            <AppText weight="semibold" size={13}>
+              {KIND_FILTER_LABEL[kindFilter]}
+            </AppText>
+            <Feather name="chevron-down" size={14} color={colors.text} />
+          </Pressable>
+        ) : (
+          settings.showIncome && (
+            <View style={styles.kinds}>
+              <KindToggle kind="expense" amount={data.expenseTotal} selected={activeKind === 'expense'} onPress={() => changeKind('expense')} />
+              <KindToggle kind="income" amount={data.incomeTotal} selected={activeKind === 'income'} onPress={() => changeKind('income')} />
+            </View>
+          )
         )}
       </View>
 
-      <View style={styles.bars}>
-        {data.loading ? null : kindTotal === 0 ? (
-          <EmptyBars />
-        ) : (
-          <CategoryBars items={bars} selectedId={categoryFilter} onSelect={setCategoryFilter} />
-        )}
-      </View>
+      {!searching && (
+        <View style={styles.bars}>
+          {data.loading ? null : kindTotal === 0 && !bars.some((b) => (b.budget ?? 0) > 0) ? (
+            <EmptyBars />
+          ) : (
+            <CategoryBars items={bars} selectedId={categoryFilter} onSelect={setCategoryFilter} onLongPress={openBarMenu} />
+          )}
+        </View>
+      )}
     </View>
   );
 
+  const empty =
+    searching && !data.loading ? (
+      <AppText size={14} color={colors.textMuted} style={styles.emptySearch}>
+        No hay movimientos que coincidan en este período.
+      </AppText>
+    ) : null;
+
   return (
-    <View style={{ width, flex: 1 }}>
+    <View style={{ width, flex: 1 }} onLayout={keyboard.onLayout}>
       <SectionList
         sections={sections}
         keyExtractor={(item) => item.id}
         ListHeaderComponent={header}
+        ListEmptyComponent={empty ?? undefined}
         stickySectionHeadersEnabled={false}
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ paddingBottom: insets.bottom + 120 }}
         renderSectionHeader={({ section }) => (
           <View style={styles.sectionHeader}>
@@ -272,33 +440,53 @@ function HomePage({ width }: { width: number }) {
           </View>
         )}
         renderItem={({ item }) => (
-          <TransactionRow
-            transaction={item}
-            onPress={() => router.push({ pathname: '/transaction', params: { id: item.id } })}
-          />
+          <TransactionRow transaction={item} onPress={() => router.push({ pathname: '/transaction', params: { id: item.id } })} />
         )}
       />
 
-      <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 16 }]} pointerEvents="box-none">
-        <View style={[styles.actions, styles.shadow]}>
-          <IconButton icon="plus" label="Nuevo movimiento" size={24} diameter={48} onPress={() => router.push('/transaction')} />
-          <IconButton icon="message-square" label="Chat" size={21} diameter={48} onPress={() => soon('El chat financiero')} />
-          <IconButton icon="search" label="Buscar" size={21} diameter={48} onPress={() => soon('La búsqueda')} />
-        </View>
-        <IconButton
-          icon="mic"
-          label="Entrada por voz"
-          size={28}
-          diameter={72}
-          color={colors.surface}
-          background={colors.accent}
-          style={styles.shadow}
-          onPress={() => soon('La entrada por voz con IA')}
-        />
+      <View
+        style={[styles.bottomBar, { paddingBottom: keyboard.inset > 0 ? keyboard.inset + 12 : insets.bottom + 16 }]}
+        pointerEvents="box-none"
+      >
+        {searching ? (
+          <View style={styles.searchWrap}>
+            <SearchBar query={search} onChange={setSearch} onClose={() => setSearch(null)} />
+          </View>
+        ) : (
+          <>
+            <View style={[styles.actions, styles.shadow]}>
+              <IconButton icon="plus" label="Nuevo movimiento" size={24} diameter={48} onPress={() => router.push('/transaction')} />
+              <IconButton icon="message-square" label="Chat" size={21} diameter={48} onPress={() => router.push('/chat')} />
+              <IconButton
+                icon="search"
+                label="Buscar"
+                size={21}
+                diameter={48}
+                onPress={() => {
+                  setCategoryFilter(undefined);
+                  setKindFilter('all');
+                  setSearch({ text: '', tags: [] });
+                }}
+              />
+            </View>
+            <IconButton
+              icon="mic"
+              label="Entrada por voz"
+              size={28}
+              diameter={72}
+              color={colors.surface}
+              background={colors.accent}
+              style={styles.shadow}
+              onPress={() => router.push('/voice')}
+            />
+          </>
+        )}
       </View>
 
       <PopoverMenu anchor={periodMenu.anchor} onClose={periodMenu.close} items={periodItems} align="right" />
-      <PopoverMenu anchor={listMenu.anchor} onClose={listMenu.close} items={listItems} />
+      <PopoverMenu anchor={listMenu.anchor} onClose={listMenu.close} items={listItems} footer={listFooter} />
+      <PopoverMenu anchor={kindMenu.anchor} onClose={kindMenu.close} items={kindItems} />
+      <PopoverMenu anchor={barMenu?.anchor ?? null} onClose={() => setBarMenu(null)} items={barMenuItems} />
       <RangeSheet
         visible={rangeOpen}
         onClose={() => setRangeOpen(false)}
@@ -438,10 +626,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    maxWidth: '45%',
     paddingHorizontal: 14,
     paddingVertical: 9,
     borderRadius: radius.pill,
     backgroundColor: colors.chip,
+  },
+  listName: {
+    flexShrink: 1,
   },
   topIcons: {
     flexDirection: 'row',
@@ -513,6 +705,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  filterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: radius.sm,
+    backgroundColor: colors.chip,
+  },
   bars: {
     marginTop: 28,
     marginBottom: 8,
@@ -531,6 +732,11 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     backgroundColor: colors.chip,
   },
+  emptySearch: {
+    textAlign: 'center',
+    paddingTop: 40,
+    paddingHorizontal: 32,
+  },
   bottomBar: {
     position: 'absolute',
     left: 0,
@@ -540,6 +746,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
+  },
+  searchWrap: {
+    flex: 1,
   },
   actions: {
     flexDirection: 'row',
@@ -554,5 +763,18 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 4 },
+  },
+  listActions: {
+    flexDirection: 'row',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    marginTop: 6,
+    paddingTop: 6,
+  },
+  listAction: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 8,
   },
 });

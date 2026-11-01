@@ -9,6 +9,8 @@ interface Props {
   emoji: string;
   title: string;
   subtitle?: string;
+  /** Small gray pill right after the title, like "Tus listas 14". */
+  badge?: string;
   onPress?: () => void;
   /** Switch, badge... When missing and the row is pressable, a chevron is shown. */
   right?: ReactNode;
@@ -16,7 +18,7 @@ interface Props {
 }
 
 /** MonAi-style settings row: emoji in a light gray circle, title and gray subtitle. */
-export function SettingsRow({ emoji, title, subtitle, onPress, right, disabled }: Props) {
+export function SettingsRow({ emoji, title, subtitle, badge, onPress, right, disabled }: Props) {
   return (
     <Pressable
       onPress={onPress}
@@ -28,9 +30,18 @@ export function SettingsRow({ emoji, title, subtitle, onPress, right, disabled }
         <AppText size={22}>{emoji}</AppText>
       </View>
       <View style={styles.texts}>
-        <AppText weight="bold" size={16}>
-          {title}
-        </AppText>
+        <View style={styles.titleRow}>
+          <AppText weight="bold" size={16}>
+            {title}
+          </AppText>
+          {badge !== undefined && (
+            <View style={styles.badge}>
+              <AppText weight="bold" size={11}>
+                {badge}
+              </AppText>
+            </View>
+          )}
+        </View>
         {subtitle && (
           <AppText size={12} color={colors.textMuted}>
             {subtitle}
@@ -68,5 +79,16 @@ const styles = StyleSheet.create({
   texts: {
     flex: 1,
     gap: 2,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  badge: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: radius.pill,
+    backgroundColor: colors.chip,
   },
 });

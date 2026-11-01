@@ -178,6 +178,14 @@ async function withPrompt<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
+/**
+ * For system screens opened on purpose (microphone permission, share sheet, file picker): they send
+ * the app to the background for a moment, and that must not lock it while the user is using it.
+ */
+export function withSystemDialog<T>(run: () => Promise<T>): Promise<T> {
+  return withPrompt(run);
+}
+
 /** Fingerprint only. The cancel button sends the user back to the PIN pad. */
 export async function authenticateWithBiometrics(promptMessage: string): Promise<boolean> {
   const result = await withPrompt(() =>

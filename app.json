@@ -38,7 +38,9 @@
           "backgroundColor": "#FAFAFA"
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-audio",
+      "expo-asset"
     ]
   }
 }

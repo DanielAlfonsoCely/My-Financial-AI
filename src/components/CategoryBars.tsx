@@ -12,57 +12,83 @@ const ZERO_HEIGHT = 54;
 /** Below this height the emoji and the amount go on the same line. */
 const INLINE_BELOW = 96;
 const BAR_WIDTH = 86;
+const BAR_RADIUS = radius.lg + 4;
+
+export interface BarPress {
+  item: CategoryTotal;
+  pageX: number;
+  pageY: number;
+}
 
 interface Props {
   items: CategoryTotal[];
   selectedId: string | null | undefined;
   onSelect: (categoryId: string | null | undefined) => void;
+  /** Long press: "Añadir/Editar presupuesto" and "Nueva transacción" (TikTok/06, 18). */
+  onLongPress?: (press: BarPress) => void;
+}
+
+function heightFor(value: number, max: number): number {
+  return value <= 0 ? ZERO_HEIGHT : MIN_HEIGHT + (MAX_HEIGHT - MIN_HEIGHT) * Math.min(1, value / max);
 }
 
 /**
- * One column per category. All columns share one scale (height ∝ amount), so a budget outline
- * can be drawn on the same scale later. Tapping a column selects it and dims the rest.
+ * One column per category. Spending and budgets share one scale (height ∝ amount), so the dashed
+ * budget outline is comparable across columns, like MonAi (TikTok/08). Over budget, the fill grows
+ * past the outline and the outline is drawn inside the fill, in red.
  */
-export function CategoryBars({ items, selectedId, onSelect }: Props) {
-  const max = Math.max(...items.map((i) => i.total), 1);
+export function CategoryBars({ items, selectedId, onSelect, onLongPress }: Props) {
+  const max = Math.max(...items.map((i) => Math.max(i.total, i.budget ?? 0)), 1);
   const hasSelection = selectedId !== undefined;
 
   return (
-    <ScrollView
-      horizontal
-      nestedScrollEnabled
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.row}
-    >
+    <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
       {items.map((item) => {
-        const zero = item.total === 0;
-        const height = zero ? ZERO_HEIGHT : MIN_HEIGHT + (MAX_HEIGHT - MIN_HEIGHT) * (item.total / max);
-        const inline = height < INLINE_BELOW;
         const selected = hasSelection && selectedId === item.categoryId;
         const dimmed = hasSelection && !selected;
+        const fill = heightFor(item.total, max);
+        const budget = item.budget ?? 0;
+        const outline = budget > 0 ? heightFor(budget, max) : 0;
+        const over = budget > 0 && item.total > budget;
+        const percent = budget > 0 ? Math.round((item.total / budget) * 100) : null;
+        const inline = fill < INLINE_BELOW && percent === null;
+
+        const label = (
+          <View style={[styles.label, inline && styles.labelInline]}>
+            <AppText size={inline ? 16 : 24}>{item.emoji}</AppText>
+            <AppText weight="bold" size={inline ? 14 : 15}>
+              {formatCompact(item.total)}
+            </AppText>
+            {percent !== null && (
+              <AppText weight="semibold" size={12} color={colors.textMuted}>
+                {percent}%
+              </AppText>
+            )}
+          </View>
+        );
+
         return (
           <Pressable
             key={item.categoryId ?? `none-${item.kind}`}
             onPress={() => onSelect(selected ? undefined : item.categoryId)}
-            style={styles.column}
+            onLongPress={(e) => onLongPress?.({ item, pageX: e.nativeEvent.pageX, pageY: e.nativeEvent.pageY })}
+            delayLongPress={350}
+            style={[styles.column, { opacity: dimmed ? 0.3 : 1 }]}
             accessibilityRole="button"
-            accessibilityLabel={`${item.name}: ${formatCompact(item.total)}`}
+            accessibilityLabel={`${item.name}: ${formatCompact(item.total)}${percent !== null ? `, ${percent}% del presupuesto` : ''}`}
           >
+            {budget > 0 && !over && (
+              // Budget outline taller than the fill: the fill sits inside it.
+              <View style={[styles.outline, { height: outline }]} />
+            )}
             <View
               style={[
-                styles.bar,
-                inline && styles.barInline,
-                {
-                  height,
-                  backgroundColor: zero ? colors.chip : item.color,
-                  opacity: dimmed ? 0.3 : 1,
-                },
+                styles.fill,
+                { height: Math.max(fill, percent !== null ? MIN_HEIGHT : 0), backgroundColor: item.total === 0 ? colors.chip : item.color },
               ]}
             >
-              <AppText size={inline ? 16 : 24}>{item.emoji}</AppText>
-              <AppText weight="bold" size={inline ? 14 : 15}>
-                {formatCompact(item.total)}
-              </AppText>
+              {over && <View style={[styles.outline, styles.outlineOver, { height: outline }]} />}
+              {label}
             </View>
           </Pressable>
         );
@@ -73,7 +99,7 @@ export function CategoryBars({ items, selectedId, onSelect }: Props) {
 
 const SKELETON = [1, 0.72, 0.5, 0.32];
 
-/** Gray columns shown before the first transaction of the period, like MonAi. */
+/** Gray columns shown before the first transaction of the period, like MonAi (Video Yt/06). */
 export function EmptyBars() {
   return (
     <View style={styles.emptyWrap}>
@@ -101,18 +127,36 @@ const styles = StyleSheet.create({
   },
   column: {
     width: BAR_WIDTH,
+    height: MAX_HEIGHT,
     justifyContent: 'flex-end',
   },
-  bar: {
-    borderRadius: radius.lg + 4,
+  fill: {
+    borderRadius: BAR_RADIUS,
+    justifyContent: 'flex-end',
+    overflow: 'hidden',
+  },
+  outline: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: BAR_RADIUS,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: colors.textFaint,
+  },
+  outlineOver: {
+    // v2 (TikTok/12): over budget the dashed line is dark and sits on the edges of the fill.
+    borderColor: 'rgba(28,28,30,0.45)',
+  },
+  label: {
     alignItems: 'center',
-    justifyContent: 'flex-end',
-    paddingBottom: 14,
-    gap: 2,
+    paddingBottom: 12,
+    gap: 1,
   },
-  barInline: {
+  labelInline: {
+    flex: 1,
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'center',
     paddingBottom: 0,
     gap: 4,
@@ -122,7 +166,7 @@ const styles = StyleSheet.create({
   },
   skeleton: {
     width: BAR_WIDTH,
-    borderRadius: radius.lg + 4,
+    borderRadius: BAR_RADIUS,
     backgroundColor: colors.chip,
   },
   emptyLabel: {

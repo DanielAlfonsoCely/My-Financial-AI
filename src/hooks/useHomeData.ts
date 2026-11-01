@@ -1,17 +1,21 @@
 import { useSQLiteContext } from 'expo-sqlite';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 
 import {
   getSetting,
+  listBudgets,
   listCategories,
   listTransactionAmounts,
   listTransactionsInRange,
+  SETTING_ACCUMULATED,
+  SETTING_BUDGET_ALERTS,
+  SETTING_BUDGET_THRESHOLD,
   SETTING_PERIOD_START_DAY,
   SETTING_SHOW_INCOME,
 } from '../db/repo';
-import type { Category, Kind, TransactionAmount, TransactionWithCategory } from '../db/types';
-import { onDataChanged } from '../lib/events';
+import type { Budget, Category, Kind, TransactionAmount, TransactionWithCategory } from '../db/types';
 import { clampStartDay } from '../lib/period';
+import { useQuery } from './useData';
 
 export interface CategoryTotal {
   categoryId: string | null;
@@ -20,38 +24,53 @@ export interface CategoryTotal {
   color: string;
   kind: Kind;
   total: number;
+  /** Monthly budget, only filled in month view. */
+  budget: number | null;
 }
 
 export interface HomeSettings {
   showIncome: boolean;
   /** Day of the month where the home "month" starts. */
   startDay: number;
+  accumulated: boolean;
+  budgetAlerts: boolean;
+  budgetThreshold: number;
   loaded: boolean;
 }
+
+export const DEFAULT_BUDGET_THRESHOLD = 85;
 
 /** Settings that change how the home screen is computed. Refreshes after any write. */
 export function useHomeSettings(): HomeSettings {
   const db = useSQLiteContext();
-  const [settings, setSettings] = useState<HomeSettings>({ showIncome: false, startDay: 1, loaded: false });
-
-  const load = useCallback(async () => {
-    const [income, startDay] = await Promise.all([
-      getSetting(db, SETTING_SHOW_INCOME),
-      getSetting(db, SETTING_PERIOD_START_DAY),
-    ]);
-    setSettings({ showIncome: income === 'true', startDay: clampStartDay(Number(startDay ?? 1)), loaded: true });
-  }, [db]);
-
-  useEffect(() => {
-    load();
-    return onDataChanged(load);
-  }, [load]);
-
-  return settings;
+  const { data, loaded } = useQuery(
+    async () => {
+      const [income, startDay, accumulated, alerts, threshold] = await Promise.all([
+        getSetting(db, SETTING_SHOW_INCOME),
+        getSetting(db, SETTING_PERIOD_START_DAY),
+        getSetting(db, SETTING_ACCUMULATED),
+        getSetting(db, SETTING_BUDGET_ALERTS),
+        getSetting(db, SETTING_BUDGET_THRESHOLD),
+      ]);
+      const parsedThreshold = Number(threshold);
+      return {
+        showIncome: income === 'true',
+        startDay: clampStartDay(Number(startDay ?? 1)),
+        accumulated: accumulated === 'true',
+        budgetAlerts: alerts === 'true',
+        budgetThreshold:
+          threshold && Number.isFinite(parsedThreshold) ? Math.min(100, Math.max(1, parsedThreshold)) : DEFAULT_BUDGET_THRESHOLD,
+      };
+    },
+    { showIncome: false, startDay: 1, accumulated: false, budgetAlerts: false, budgetThreshold: DEFAULT_BUDGET_THRESHOLD },
+    [db],
+  );
+  return { ...data, loaded };
 }
 
 export interface PeriodData {
   transactions: TransactionWithCategory[];
+  categories: Category[];
   expenseTotal: number;
   incomeTotal: number;
   /** Every category of the kind, including those with 0, biggest first. */
@@ -61,40 +80,49 @@ export interface PeriodData {
 
 const ALL_TIME: [number, number] = [0, Number.MAX_SAFE_INTEGER];
 
-/** Transactions and totals for a range. `null` means all time. */
-export function usePeriodData(range: [number, number] | null): PeriodData {
+/**
+ * Transactions and totals of a list for a range (`null` = all time).
+ * Budgets are attached only when `withBudgets` is true (month view).
+ */
+export function usePeriodData(listId: string, range: [number, number] | null, withBudgets: boolean): PeriodData {
   const db = useSQLiteContext();
-  const [transactions, setTransactions] = useState<TransactionWithCategory[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [loading, setLoading] = useState(true);
   const [start, end] = range ?? ALL_TIME;
-
-  const load = useCallback(async () => {
-    const [rows, cats] = await Promise.all([listTransactionsInRange(db, start, end), listCategories(db)]);
-    setTransactions(rows);
-    setCategories(cats);
-    setLoading(false);
-  }, [db, start, end]);
-
-  useEffect(() => {
-    load();
-    return onDataChanged(load);
-  }, [load]);
+  const { data, loaded } = useQuery(
+    async () => {
+      const [rows, cats, budgets] = await Promise.all([
+        listTransactionsInRange(db, listId, start, end),
+        listCategories(db, listId),
+        listBudgets(db, listId),
+      ]);
+      return { rows, cats, budgets };
+    },
+    { rows: [] as TransactionWithCategory[], cats: [] as Category[], budgets: [] as Budget[] },
+    [db, listId, start, end],
+  );
 
   return useMemo(() => {
     let expenseTotal = 0;
     let incomeTotal = 0;
+    const budgetBy = new Map(data.budgets.map((b) => [b.category_id, b.amount]));
     const totals = new Map<string, CategoryTotal>();
 
-    for (const c of categories) {
-      totals.set(c.id, { categoryId: c.id, name: c.name, emoji: c.emoji, color: c.color, kind: c.kind, total: 0 });
+    for (const c of data.cats) {
+      totals.set(c.id, {
+        categoryId: c.id,
+        name: c.name,
+        emoji: c.emoji,
+        color: c.color,
+        kind: c.kind,
+        total: 0,
+        budget: withBudgets ? budgetBy.get(c.id) ?? null : null,
+      });
     }
 
-    for (const t of transactions) {
+    for (const t of data.rows) {
       if (t.kind === 'income') incomeTotal += t.amount;
       else expenseTotal += t.amount;
 
-      // Deleted categories still show their spending; uncategorized gets its own column per kind.
+      // Hidden categories still show their spending; uncategorized gets its own column per kind.
       const key = t.category_id ?? `none-${t.kind}`;
       let entry = totals.get(key);
       if (!entry) {
@@ -105,37 +133,27 @@ export function usePeriodData(range: [number, number] | null): PeriodData {
           color: t.category_color ?? '#EDEDEF',
           kind: t.kind,
           total: 0,
+          budget: null,
         };
         totals.set(key, entry);
       }
       entry.total += t.amount;
     }
 
-    // Map keeps insertion order (category sort_order), so the sort is stable for zeros.
+    // Biggest first. Zeros keep the category order (Map insertion order + stable sort).
     const all = [...totals.values()].sort((a, b) => b.total - a.total);
     const byCategory: Record<Kind, CategoryTotal[]> = {
       expense: all.filter((c) => c.kind === 'expense'),
       income: all.filter((c) => c.kind === 'income'),
     };
-    return { transactions, expenseTotal, incomeTotal, byCategory, loading };
-  }, [transactions, categories, loading]);
+    return { transactions: data.rows, categories: data.cats, expenseTotal, incomeTotal, byCategory, loading: !loaded };
+  }, [data, loaded, withBudgets]);
 }
 
-/** Amount and date of every transaction, for the month and year strips. */
-export function useAmountIndex(): TransactionAmount[] {
+/** Amount and date of every transaction of the list, for the strips and "Acumulado". */
+export function useAmountIndex(listId: string): TransactionAmount[] {
   const db = useSQLiteContext();
-  const [rows, setRows] = useState<TransactionAmount[]>([]);
-
-  const load = useCallback(async () => {
-    setRows(await listTransactionAmounts(db));
-  }, [db]);
-
-  useEffect(() => {
-    load();
-    return onDataChanged(load);
-  }, [load]);
-
-  return rows;
+  return useQuery(() => listTransactionAmounts(db, listId), [] as TransactionAmount[], [db, listId]).data;
 }
 
 /** Sums rows in [start, end). Balance = income − expenses. */

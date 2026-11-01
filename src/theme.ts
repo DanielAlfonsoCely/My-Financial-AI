@@ -17,6 +17,7 @@ export const colors = {
 } as const;
 
 // Pastel colors used for category bars and emoji bubbles.
+// The first 10 are referenced by index in seed.ts: only append, never reorder.
 export const categoryPalette = [
   '#E4EFC7',
   '#F8D8C6',
@@ -28,6 +29,12 @@ export const categoryPalette = [
   '#EFDFD1',
   '#DEE5EC',
   '#F6D8EB',
+  '#DDF3A9',
+  '#C9EEF6',
+  '#FFE1B0',
+  '#C9D4F4',
+  '#F7C9C9',
+  '#E7D3F4',
 ] as const;
 
 export const fonts = {

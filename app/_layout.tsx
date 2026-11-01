@@ -13,6 +13,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { migrateDatabase } from '../src/db/migrations';
+import { ToastHost } from '../src/components/ToastHost';
 import { LockProvider } from '../src/security/LockProvider';
 import { colors } from '../src/theme';
 
@@ -47,13 +48,28 @@ export default function RootLayout() {
             screenOptions={{
               headerShown: false,
               contentStyle: { backgroundColor: colors.background },
+              animation: 'slide_from_right',
             }}
           >
             <Stack.Screen name="index" />
+            <Stack.Screen name="onboarding" options={{ animation: 'fade', gestureEnabled: false }} />
             <Stack.Screen name="transaction" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+            <Stack.Screen name="voice" options={{ presentation: 'modal', animation: 'fade' }} />
+            <Stack.Screen name="chat" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
             <Stack.Screen name="settings" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
-            <Stack.Screen name="security" options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="category" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+            <Stack.Screen name="budget" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+            <Stack.Screen name="list-edit" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+            <Stack.Screen name="security" />
+            <Stack.Screen name="categories" />
+            <Stack.Screen name="budgets" />
+            <Stack.Screen name="tags" />
+            <Stack.Screen name="recurring" />
+            <Stack.Screen name="lists" />
+            <Stack.Screen name="ai-rules" />
+            <Stack.Screen name="ai" />
           </Stack>
+          <ToastHost />
         </SQLiteProvider>
       </LockProvider>
     </SafeAreaProvider>

@@ -8,6 +8,8 @@ import { AppText } from './AppText';
 export interface MenuItem {
   key: string;
   label: string;
+  /** Small gray line under the label ("$22.3K restante"). */
+  subtitle?: string;
   icon?: ComponentProps<typeof Feather>['name'];
   emoji?: string;
   checked?: boolean;
@@ -69,9 +71,16 @@ export function PopoverMenu({ anchor, onClose, items, align = 'left', footer }: 
                   <AppText size={16}>{item.emoji}</AppText>
                 ) : null}
               </View>
-              <AppText weight="semibold" size={16} style={styles.label}>
-                {item.label}
-              </AppText>
+              <View style={styles.label}>
+                <AppText weight="semibold" size={16}>
+                  {item.label}
+                </AppText>
+                {item.subtitle && (
+                  <AppText size={12} color={colors.textMuted}>
+                    {item.subtitle}
+                  </AppText>
+                )}
+              </View>
             </Pressable>
           </View>
         ))}

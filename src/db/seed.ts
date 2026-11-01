@@ -1,8 +1,11 @@
 import { categoryPalette } from '../theme';
 import type { Kind } from './types';
 
+/** The list every install starts with. Existing data is moved here by migration v2. */
+export const PERSONAL_LIST_ID = 'list-personal';
+
 interface SeedCategory {
-  // Stable ids so backups from different phones merge into the same categories.
+  // Stable ids (only for the Personal list) so backups from different phones merge.
   id: string;
   name: string;
   emoji: string;
@@ -12,6 +15,7 @@ interface SeedCategory {
 
 const p = categoryPalette;
 
+/** Suggested categories. Onboarding shows them and keeps only the ones the user taps. */
 export const DEFAULT_CATEGORIES: SeedCategory[] = [
   { id: 'cat-mercado', name: 'Mercado', emoji: '🥑', color: p[0], kind: 'expense' },
   { id: 'cat-comer-afuera', name: 'Comer afuera', emoji: '🍔', color: p[1], kind: 'expense' },
