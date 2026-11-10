@@ -79,9 +79,11 @@ export default function TransactionScreen() {
           router.back();
           return;
         }
-        original.current = { kind: t.kind, amount: t.amount, categoryId: t.category_id };
+        // TODO(bloque C): la hoja todavía no edita transferencias; se abren como gasto hasta que exista el segmento Transferir.
+        const shownKind: Kind = t.kind === 'income' ? 'income' : 'expense';
+        original.current = { kind: shownKind, amount: t.amount, categoryId: t.category_id };
         setListId(t.list_id);
-        setKind(t.kind);
+        setKind(shownKind);
         setTitle(t.title);
         setDigits(String(t.amount));
         setCategoryId(t.category_id);

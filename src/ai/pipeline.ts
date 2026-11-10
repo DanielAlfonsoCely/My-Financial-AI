@@ -41,7 +41,7 @@ export async function loadAiContext(db: SQLiteDatabase, listId: string): Promise
     // Titles that came from bank notifications or SMS are never sent to Gemini.
     history: recent
       .filter((t) => t.source !== 'notification' && t.source !== 'sms')
-      .map((t) => ({ title: t.title, categoryId: t.category_id, kind: t.kind })),
+      .flatMap((t) => (t.kind === 'transfer' ? [] : [{ title: t.title, categoryId: t.category_id, kind: t.kind }])),
     tags: tags.map((t) => t.name),
   };
 }
@@ -374,11 +374,14 @@ const MONTHS_SHORT = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 's
 
 /** Summary of the list that the chat answers from: monthly totals, categories, budgets, recent movements. */
 async function financialSummary(db: SQLiteDatabase, listId: string): Promise<string> {
-  const [recent, categories, budgets] = await Promise.all([
+  const [all, categories, budgets] = await Promise.all([
     listRecentTransactions(db, listId, 1500),
     listCategories(db, listId),
     listBudgets(db, listId),
   ]);
+  // Transfers between the user's own accounts are not spending, and the chat gets nothing about
+  // accounts: no names, no balances (privacy rule).
+  const recent = all.filter((t) => t.kind !== 'transfer');
   const names = new Map(categories.map((c) => [c.id, c.name]));
   const now = new Date();
   const lines: string[] = [];

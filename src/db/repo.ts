@@ -7,8 +7,12 @@ import { nextOccurrence, type Repeat } from '../lib/recurrence';
 import { normalizeTag, parseTags, serializeTags } from '../lib/tags';
 import { keywords, normalize } from '../lib/text';
 import { categoryPalette } from '../theme';
-import { DEFAULT_CATEGORIES, PERSONAL_LIST_ID } from './seed';
+import { DEFAULT_CATEGORIES, INVESTMENTS_GROUP_ID, PERSONAL_LIST_ID } from './seed';
 import type {
+  Account,
+  AccountGroup,
+  AccountType,
+  AccountWithBalance,
   AiRule,
   Budget,
   Category,
@@ -72,6 +76,10 @@ export const SETTING_BUDGET_ALERTS = 'budget_alerts';
 /** Percentage (1–100) for the budget alert threshold. */
 export const SETTING_BUDGET_THRESHOLD = 'budget_threshold';
 export const DEFAULT_BUDGET_THRESHOLD = 85;
+/** Accounts panel: 'general' (one column per account) or 'grouped' (one per group). */
+export const SETTING_ACCOUNTS_VIEW = 'accounts_view';
+/** The account used in the last expense or income, offered first the next time. */
+export const SETTING_LAST_ACCOUNT = 'last_account_id';
 
 export async function getSetting(db: SQLiteDatabase, key: string): Promise<string | null> {
   const row = await db.getFirstAsync<SettingRow>('SELECT * FROM settings WHERE key = ?', key);
@@ -360,10 +368,14 @@ export function suggestedCategories(listId: string): PickedCategory[] {
 
 // ---------- Transactions ----------
 
-const SELECT_WITH_CATEGORY = `
-  SELECT t.*, c.name AS category_name, c.emoji AS category_emoji, c.color AS category_color
+export const SELECT_WITH_CATEGORY = `
+  SELECT t.*, c.name AS category_name, c.emoji AS category_emoji, c.color AS category_color,
+         a.name AS account_name, a.emoji AS account_emoji,
+         ta.name AS to_account_name, ta.emoji AS to_account_emoji
   FROM transactions t
   LEFT JOIN categories c ON c.id = t.category_id
+  LEFT JOIN accounts a ON a.id = t.account_id
+  LEFT JOIN accounts ta ON ta.id = t.to_account_id
 `;
 
 /** Transactions of a list in [start, end), newest first. */
@@ -416,22 +428,76 @@ function assertValidInput(input: TransactionInput): void {
   }
 }
 
+interface Money {
+  account_id: string | null;
+  to_account_id: string | null;
+  to_amount: number | null;
+  currency: string;
+  category_id: string | null;
+}
+
+/**
+ * Checks the accounts of a movement and fills in what follows from them: the currency is the one
+ * of the account the money leaves (or enters), a transfer has no category, and a transfer between
+ * currencies must say how much arrived.
+ */
+async function resolveMoney(
+  db: SQLiteDatabase,
+  input: TransactionInput,
+  current?: Pick<Transaction, 'account_id' | 'to_account_id' | 'to_amount'>,
+): Promise<Money> {
+  const accountId = input.account_id === undefined ? current?.account_id ?? null : input.account_id;
+  const live = (id: string) => db.getFirstAsync<Account>('SELECT * FROM accounts WHERE id = ? AND deleted_at IS NULL', id);
+
+  if (input.kind !== 'transfer') {
+    const account = accountId ? await live(accountId) : null;
+    if (accountId && !account) throw new Error('Esa cuenta ya no existe.');
+    return {
+      account_id: accountId,
+      to_account_id: null,
+      to_amount: null,
+      currency: account?.currency ?? input.currency,
+      category_id: input.category_id,
+    };
+  }
+
+  const toId = input.to_account_id === undefined ? current?.to_account_id ?? null : input.to_account_id;
+  if (!accountId || !toId) throw new Error('Elige de qué cuenta sale y a cuál entra.');
+  if (accountId === toId) throw new Error('La cuenta de origen y la de destino deben ser distintas.');
+  const [from, to] = await Promise.all([live(accountId), live(toId)]);
+  if (!from || !to) throw new Error('Una de las cuentas ya no existe.');
+
+  let toAmount: number | null = null;
+  if (from.currency !== to.currency) {
+    const given = input.to_amount === undefined ? current?.to_amount ?? null : input.to_amount;
+    if (given === null || !Number.isInteger(given) || given <= 0) {
+      throw new Error(`Escribe cuánto llegó a ${to.name} en ${to.currency}.`);
+    }
+    toAmount = given;
+  }
+  return { account_id: accountId, to_account_id: toId, to_amount: toAmount, currency: from.currency, category_id: null };
+}
+
 async function insertTransaction(db: SQLiteDatabase, listId: string, input: TransactionInput): Promise<string> {
   assertValidInput(input);
+  const money = await resolveMoney(db, input);
   const id = uuid();
   const now = Date.now();
   const tags = input.tags ?? [];
   await db.runAsync(
     `INSERT INTO transactions
-       (id, list_id, kind, amount, currency, category_id, title, note, tags, occurred_at, source, source_ref,
-        recurring_id, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, list_id, kind, amount, currency, category_id, account_id, to_account_id, to_amount, title, note, tags,
+        occurred_at, source, source_ref, recurring_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     id,
     listId,
     input.kind,
     input.amount,
-    input.currency,
-    input.category_id,
+    money.currency,
+    money.category_id,
+    money.account_id,
+    money.to_account_id,
+    money.to_amount,
     input.title.trim(),
     input.note ?? null,
     serializeTags(tags),
@@ -458,15 +524,19 @@ async function changeTransaction(db: SQLiteDatabase, id: string, input: Transact
   const current = await db.getFirstAsync<Transaction>('SELECT * FROM transactions WHERE id = ?', id);
   if (!current) throw new Error('El movimiento ya no existe.');
   const tags = input.tags ?? parseTags(current.tags);
+  const money = await resolveMoney(db, input, current);
   await db.runAsync(
     `UPDATE transactions
-     SET kind = ?, amount = ?, currency = ?, category_id = ?, title = ?, note = ?, tags = ?, occurred_at = ?,
-         recurring_id = ?, updated_at = ?
+     SET kind = ?, amount = ?, currency = ?, category_id = ?, account_id = ?, to_account_id = ?, to_amount = ?,
+         title = ?, note = ?, tags = ?, occurred_at = ?, recurring_id = ?, updated_at = ?
      WHERE id = ?`,
     input.kind,
     input.amount,
-    input.currency,
-    input.category_id,
+    money.currency,
+    money.category_id,
+    money.account_id,
+    money.to_account_id,
+    money.to_amount,
     input.title.trim(),
     input.note ?? null,
     serializeTags(tags),
@@ -501,7 +571,9 @@ export interface SaveTransactionOptions {
  * Returns the id of the movement.
  */
 export async function saveTransaction(db: SQLiteDatabase, listId: string, options: SaveTransactionOptions): Promise<string> {
-  const { input, repeat } = options;
+  const { input } = options;
+  // A transfer is a one-off: recurring templates only know expenses and incomes.
+  const repeat: Repeat = input.kind === 'transfer' ? 'once' : options.repeat;
   const editingId = options.id ?? null;
   const recurringId = options.recurringId ?? null;
   assertValidInput(input);
@@ -525,6 +597,9 @@ export async function saveTransaction(db: SQLiteDatabase, listId: string, option
     }
     return editingId;
   });
+  if (input.kind !== 'transfer' && input.account_id) {
+    await enqueueWrite(() => putSetting(db, SETTING_LAST_ACCOUNT, input.account_id as string));
+  }
   notifyDataChanged();
   return id;
 }
@@ -612,14 +687,16 @@ export function getRecurring(db: SQLiteDatabase, id: string): Promise<Recurring 
 }
 
 async function insertRecurring(db: SQLiteDatabase, listId: string, input: TransactionInput, frequency: Frequency): Promise<string> {
+  if (input.kind === 'transfer') throw new Error('Una transferencia no se puede repetir.');
   const id = uuid();
   const now = Date.now();
   const anchorDay = new Date(input.occurred_at).getDate();
   await db.runAsync(
     `INSERT INTO recurring
-       (id, list_id, kind, amount, currency, category_id, title, tags, frequency, anchor_day, next_at, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    id, listId, input.kind, input.amount, input.currency, input.category_id, input.title.trim(),
+       (id, list_id, kind, amount, currency, category_id, account_id, title, tags, frequency, anchor_day, next_at,
+        created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    id, listId, input.kind, input.amount, input.currency, input.category_id, input.account_id ?? null, input.title.trim(),
     serializeTags(input.tags ?? []), frequency, anchorDay, nextOccurrence(input.occurred_at, frequency, anchorDay), now, now,
   );
   return id;
@@ -640,14 +717,16 @@ export async function createRecurringFrom(
 async function changeRecurring(db: SQLiteDatabase, id: string, input: TransactionInput, frequency: Frequency): Promise<void> {
   const current = await getRecurring(db, id);
   if (!current) return;
+  if (input.kind === 'transfer') throw new Error('Una transferencia no se puede repetir.');
   const frequencyChanged = current.frequency !== frequency;
   const anchorDay = frequencyChanged ? new Date(input.occurred_at).getDate() : current.anchor_day;
   const nextAt = frequencyChanged ? nextOccurrence(input.occurred_at, frequency, anchorDay) : current.next_at;
   await db.runAsync(
-    `UPDATE recurring SET kind = ?, amount = ?, currency = ?, category_id = ?, title = ?, tags = ?, frequency = ?,
-       anchor_day = ?, next_at = ?, updated_at = ? WHERE id = ?`,
-    input.kind, input.amount, input.currency, input.category_id, input.title.trim(), serializeTags(input.tags ?? []),
-    frequency, anchorDay, nextAt, Date.now(), id,
+    `UPDATE recurring SET kind = ?, amount = ?, currency = ?, category_id = ?, account_id = ?, title = ?, tags = ?,
+       frequency = ?, anchor_day = ?, next_at = ?, updated_at = ? WHERE id = ?`,
+    input.kind, input.amount, input.currency, input.category_id,
+    input.account_id === undefined ? current.account_id : input.account_id,
+    input.title.trim(), serializeTags(input.tags ?? []), frequency, anchorDay, nextAt, Date.now(), id,
   );
 }
 
@@ -703,6 +782,10 @@ async function runMaterialize(db: SQLiteDatabase, now: number): Promise<number> 
       // Read again inside the write: the template may have been edited or stopped while this waited its turn.
       const r = await getRecurring(db, pending.id);
       if (!r) return 0;
+      // An account archived after the template was made: the copies go "sin cuenta".
+      const account = r.account_id
+        ? (await db.getFirstAsync<{ id: string }>('SELECT id FROM accounts WHERE id = ? AND deleted_at IS NULL', r.account_id))?.id ?? null
+        : null;
       let copies = 0;
       let next = r.next_at;
       while (next <= now && created + copies < MAX_COPIES_PER_RUN) {
@@ -712,10 +795,11 @@ async function runMaterialize(db: SQLiteDatabase, now: number): Promise<number> 
           const stamp = Date.now();
           await db.runAsync(
             `INSERT INTO transactions
-               (id, list_id, kind, amount, currency, category_id, title, tags, occurred_at, source, source_ref,
-                recurring_id, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'recurring', ?, ?, ?, ?)`,
-            uuid(), r.list_id, r.kind, r.amount, r.currency, r.category_id, r.title, r.tags, next, ref, r.id, stamp, stamp,
+               (id, list_id, kind, amount, currency, category_id, account_id, title, tags, occurred_at, source,
+                source_ref, recurring_id, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'recurring', ?, ?, ?, ?)`,
+            uuid(), r.list_id, r.kind, r.amount, r.currency, r.category_id, account, r.title, r.tags, next, ref, r.id,
+            stamp, stamp,
           );
           copies++;
         }
@@ -865,4 +949,228 @@ export async function deleteAiRule(db: SQLiteDatabase, id: string): Promise<void
   const now = Date.now();
   await enqueueWrite(() => db.runAsync('UPDATE ai_rules SET deleted_at = ?, updated_at = ? WHERE id = ?', now, now, id));
   notifyDataChanged();
+}
+
+// ---------- Accounts ----------
+//
+// Accounts and their groups are global: money is one, lists are only views of spending.
+// Balances are never stored; they are worked out from the opening balance and the movements.
+
+export function listAccountGroups(db: SQLiteDatabase): Promise<AccountGroup[]> {
+  return db.getAllAsync<AccountGroup>('SELECT * FROM account_groups WHERE deleted_at IS NULL ORDER BY sort_order, created_at');
+}
+
+export async function createAccountGroup(db: SQLiteDatabase, name: string, emoji: string): Promise<string> {
+  const clean = name.trim();
+  if (!clean) throw new Error('Ponle un nombre al grupo.');
+  const id = uuid();
+  const now = Date.now();
+  await writeTx(db, async () => {
+    // User groups go before the fixed "Inversiones" group (sort_order 1000).
+    const order = await db.getFirstAsync<{ n: number }>(
+      'SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM account_groups WHERE system_key IS NULL',
+    );
+    await db.runAsync(
+      'INSERT INTO account_groups (id, name, emoji, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+      id, clean, emoji.trim(), order?.n ?? 1, now, now,
+    );
+  });
+  notifyDataChanged();
+  return id;
+}
+
+export async function updateAccountGroup(db: SQLiteDatabase, id: string, name: string, emoji: string): Promise<void> {
+  const clean = name.trim();
+  if (!clean) throw new Error('Ponle un nombre al grupo.');
+  await enqueueWrite(() =>
+    db.runAsync('UPDATE account_groups SET name = ?, emoji = ?, updated_at = ? WHERE id = ?', clean, emoji.trim(), Date.now(), id),
+  );
+  notifyDataChanged();
+}
+
+/** Deleting a group never deletes its accounts: they stay "sin grupo". The fixed group cannot be deleted. */
+export async function deleteAccountGroup(db: SQLiteDatabase, id: string): Promise<void> {
+  const now = Date.now();
+  await writeTx(db, async () => {
+    const group = await db.getFirstAsync<AccountGroup>('SELECT * FROM account_groups WHERE id = ?', id);
+    if (!group) return;
+    if (group.system_key) throw new Error('El grupo Inversiones no se puede eliminar.');
+    await db.runAsync('UPDATE accounts SET group_id = NULL, updated_at = ? WHERE group_id = ?', now, id);
+    await db.runAsync('UPDATE account_groups SET deleted_at = ?, updated_at = ? WHERE id = ?', now, now, id);
+  });
+  notifyDataChanged();
+}
+
+/** Moves a user group one place up (-1) or down (1) among the user groups. */
+export async function moveAccountGroup(db: SQLiteDatabase, id: string, direction: -1 | 1): Promise<void> {
+  const now = Date.now();
+  await writeTx(db, async () => {
+    const groups = await db.getAllAsync<AccountGroup>(
+      'SELECT * FROM account_groups WHERE deleted_at IS NULL AND system_key IS NULL ORDER BY sort_order, created_at',
+    );
+    const from = groups.findIndex((g) => g.id === id);
+    const to = from + direction;
+    if (from < 0 || to < 0 || to >= groups.length) return;
+    [groups[from], groups[to]] = [groups[to], groups[from]];
+    for (const [index, g] of groups.entries()) {
+      if (g.sort_order !== index + 1) {
+        await db.runAsync('UPDATE account_groups SET sort_order = ?, updated_at = ? WHERE id = ?', index + 1, now, g.id);
+      }
+    }
+  });
+  notifyDataChanged();
+}
+
+export interface AccountInput {
+  name: string;
+  emoji: string;
+  color: string;
+  type: AccountType;
+  group_id: string | null;
+  subtitle?: string | null;
+  currency?: string;
+  /** For credit: the debt the card already has. */
+  opening_balance?: number;
+  credit_limit?: number | null;
+}
+
+/** Types that are investments: they always live in the fixed group, and only they do. */
+export function isInvestmentType(type: AccountType): boolean {
+  return type === 'broker' || type === 'asset';
+}
+
+function cleanAccount(input: AccountInput) {
+  if (!input.name.trim()) throw new Error('Ponle un nombre a la cuenta.');
+  const opening = input.opening_balance ?? 0;
+  if (!Number.isInteger(opening)) throw new Error('El saldo debe ser un número entero.');
+  const limit = input.type === 'credit' ? input.credit_limit ?? null : null;
+  if (limit !== null && (!Number.isInteger(limit) || limit <= 0)) throw new Error('El cupo debe ser mayor que cero.');
+  // A liability never sits in a group of assets; investments always sit in "Inversiones".
+  const groupId = input.type === 'credit'
+    ? null
+    : isInvestmentType(input.type)
+      ? INVESTMENTS_GROUP_ID
+      : input.group_id === INVESTMENTS_GROUP_ID
+        ? null
+        : input.group_id;
+  return {
+    name: input.name.trim(),
+    emoji: input.emoji.trim(),
+    color: input.color,
+    type: input.type,
+    group_id: groupId,
+    subtitle: input.subtitle?.trim() || null,
+    currency: input.currency ?? 'COP',
+    opening_balance: opening,
+    credit_limit: limit,
+  };
+}
+
+export async function createAccount(db: SQLiteDatabase, input: AccountInput): Promise<string> {
+  const a = cleanAccount(input);
+  const id = uuid();
+  const now = Date.now();
+  await writeTx(db, async () => {
+    const order = await db.getFirstAsync<{ n: number }>('SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM accounts');
+    await db.runAsync(
+      `INSERT INTO accounts
+         (id, name, emoji, color, group_id, subtitle, type, currency, opening_balance, credit_limit, sort_order, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      id, a.name, a.emoji, a.color, a.group_id, a.subtitle, a.type, a.currency, a.opening_balance, a.credit_limit,
+      order?.n ?? 1, now, now,
+    );
+  });
+  notifyDataChanged();
+  return id;
+}
+
+/** Edits everything but the opening balance and the currency (see setAccountBalance). */
+export async function updateAccount(db: SQLiteDatabase, id: string, input: AccountInput): Promise<void> {
+  const a = cleanAccount(input);
+  await enqueueWrite(() =>
+    db.runAsync(
+      `UPDATE accounts SET name = ?, emoji = ?, color = ?, group_id = ?, subtitle = ?, type = ?, credit_limit = ?, updated_at = ?
+       WHERE id = ?`,
+      a.name, a.emoji, a.color, a.group_id, a.subtitle, a.type, a.credit_limit, Date.now(), id,
+    ),
+  );
+  notifyDataChanged();
+}
+
+/**
+ * Archives the account (soft delete). Its movements stay where they are, still showing its name;
+ * it just leaves the panel, the totals and the pickers.
+ */
+export async function deleteAccount(db: SQLiteDatabase, id: string): Promise<void> {
+  const now = Date.now();
+  await writeTx(db, async () => {
+    await db.runAsync('UPDATE accounts SET deleted_at = ?, updated_at = ? WHERE id = ?', now, now, id);
+    await db.runAsync('UPDATE recurring SET account_id = NULL, updated_at = ? WHERE account_id = ?', now, id);
+    await db.runAsync('DELETE FROM settings WHERE key = ? AND value = ?', SETTING_LAST_ACCOUNT, id);
+  });
+  notifyDataChanged();
+}
+
+const SELECT_ACCOUNTS_WITH_DELTA = `
+  SELECT a.*,
+    COALESCE((SELECT SUM(CASE t.kind WHEN 'income' THEN t.amount ELSE -t.amount END)
+              FROM transactions t WHERE t.account_id = a.id AND t.deleted_at IS NULL), 0)
+    + COALESCE((SELECT SUM(COALESCE(t.to_amount, t.amount))
+                FROM transactions t WHERE t.to_account_id = a.id AND t.deleted_at IS NULL), 0) AS delta
+  FROM accounts a
+`;
+
+/**
+ * opening balance + incomes − expenses − transfers out + transfers in (what arrived, when the
+ * currencies differ). A credit account is the mirror: its balance is debt, so expenses raise it
+ * and payments lower it.
+ */
+function withBalance(row: Account & { delta: number }): AccountWithBalance {
+  const { delta, ...account } = row;
+  return { ...account, balance: account.type === 'credit' ? account.opening_balance - delta : account.opening_balance + delta };
+}
+
+export async function listAccounts(db: SQLiteDatabase): Promise<AccountWithBalance[]> {
+  const rows = await db.getAllAsync<Account & { delta: number }>(
+    `${SELECT_ACCOUNTS_WITH_DELTA} WHERE a.deleted_at IS NULL ORDER BY a.sort_order, a.created_at`,
+  );
+  return rows.map(withBalance);
+}
+
+export async function getAccount(db: SQLiteDatabase, id: string): Promise<AccountWithBalance | null> {
+  const row = await db.getFirstAsync<Account & { delta: number }>(
+    `${SELECT_ACCOUNTS_WITH_DELTA} WHERE a.id = ? AND a.deleted_at IS NULL`,
+    id,
+  );
+  return row ? withBalance(row) : null;
+}
+
+/**
+ * "Cuadrar saldo": the user types what the account really has and the opening balance absorbs the
+ * difference. It is not written as an expense or an income, so it never shows up in the spending
+ * of a list. Also how the value of a manual investment (CDT, property) is updated.
+ */
+export async function setAccountBalance(db: SQLiteDatabase, id: string, realBalance: number): Promise<void> {
+  if (!Number.isInteger(realBalance)) throw new Error('El saldo debe ser un número entero.');
+  await writeTx(db, async () => {
+    const row = await db.getFirstAsync<Account & { delta: number }>(`${SELECT_ACCOUNTS_WITH_DELTA} WHERE a.id = ?`, id);
+    if (!row) throw new Error('Esa cuenta ya no existe.');
+    const current = withBalance(row);
+    if (current.balance === realBalance) return;
+    await db.runAsync(
+      'UPDATE accounts SET opening_balance = ?, updated_at = ? WHERE id = ?',
+      current.opening_balance + (realBalance - current.balance), Date.now(), id,
+    );
+  });
+  notifyDataChanged();
+}
+
+/** Latest movements that touch the account (as origin or destination), any list. */
+export function listAccountTransactions(db: SQLiteDatabase, accountId: string, limit: number): Promise<TransactionWithCategory[]> {
+  return db.getAllAsync<TransactionWithCategory>(
+    `${SELECT_WITH_CATEGORY}
+     WHERE t.deleted_at IS NULL AND (t.account_id = ? OR t.to_account_id = ?)
+     ORDER BY t.occurred_at DESC LIMIT ?`,
+    accountId, accountId, limit,
+  );
 }

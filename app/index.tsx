@@ -62,7 +62,8 @@ function groupByDay(transactions: TransactionWithCategory[], now: Date): DaySect
     }
     const section = sections[sections.length - 1];
     section.data.push(t);
-    section.total += t.kind === 'income' ? t.amount : -t.amount;
+    // A transfer is listed on its day but is not part of the day's total.
+    if (t.kind !== 'transfer') section.total += t.kind === 'income' ? t.amount : -t.amount;
   }
   return sections;
 }
@@ -77,7 +78,7 @@ function matchesSearch(t: TransactionWithCategory, query: SearchQuery): boolean 
   if (!query.tags.every((tag) => tags.includes(tag))) return false;
   const text = query.text.trim();
   if (!text) return true;
-  return matchesAllWords(`${t.title} ${t.category_name ?? ''} ${tags.join(' ')}`, text);
+  return matchesAllWords(`${t.title} ${t.category_name ?? ''} ${t.account_name ?? ''} ${t.to_account_name ?? ''} ${tags.join(' ')}`, text);
 }
 
 /** Measures a view on screen so a PopoverMenu can open right under it. */
