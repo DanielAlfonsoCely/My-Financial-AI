@@ -18,14 +18,19 @@ const VISIBLE_TAGS = 2;
 /** v2 row: emoji bubble, gray category, bold title, tags below and the amount as plain text. */
 export function TransactionRow({ transaction: t, onPress }: Props) {
   const isIncome = t.kind === 'income';
-  const categoryName = t.category_name ?? 'Sin categoría';
-  const title = t.title || categoryName;
+  const isTransfer = t.kind === 'transfer';
+  // A transfer has no category: its small line says where the money went.
+  const route = `${t.account_name ?? 'Cuenta'} → ${t.to_account_name ?? 'Cuenta'}`;
+  const categoryName = isTransfer ? route : t.category_name ?? 'Sin categoría';
+  const title = t.title || (isTransfer ? 'Transferencia' : categoryName);
   const tags = parseTags(t.tags);
+  // In everyday movements the account is one more quiet chip next to the tags.
+  const accountChip = !isTransfer && t.account_name ? `${t.account_emoji ?? ''} ${t.account_name}`.trim() : null;
 
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [styles.row, pressed && styles.pressed]} accessibilityRole="button">
-      <View style={[styles.bubble, { backgroundColor: t.category_color ?? colors.chip }]}>
-        <AppText size={22}>{t.category_emoji ?? '❔'}</AppText>
+      <View style={[styles.bubble, { backgroundColor: isTransfer ? colors.chip : t.category_color ?? colors.chip }]}>
+        {isTransfer ? <Feather name="repeat" size={20} color={colors.text} /> : <AppText size={22}>{t.category_emoji ?? '❔'}</AppText>}
         {t.recurring_id && (
           <View style={styles.badge}>
             <Feather name="repeat" size={10} color={colors.text} />
@@ -39,8 +44,15 @@ export function TransactionRow({ transaction: t, onPress }: Props) {
         <AppText weight="bold" size={17} numberOfLines={2}>
           {title}
         </AppText>
-        {tags.length > 0 && (
+        {(tags.length > 0 || accountChip) && (
           <View style={styles.tags}>
+            {accountChip && (
+              <View style={styles.tag}>
+                <AppText size={11} color={colors.textMuted} numberOfLines={1}>
+                  {accountChip}
+                </AppText>
+              </View>
+            )}
             {tags.slice(0, VISIBLE_TAGS).map((tag) => (
               <View key={tag} style={styles.tag}>
                 <AppText size={11} color={colors.textMuted}>
@@ -58,8 +70,8 @@ export function TransactionRow({ transaction: t, onPress }: Props) {
           </View>
         )}
       </View>
-      <AppText weight="bold" size={16} color={isIncome ? colors.income : colors.text}>
-        {isIncome ? '+ ' : '- '}
+      <AppText weight="bold" size={16} color={isIncome ? colors.income : isTransfer ? colors.textMuted : colors.text}>
+        {isTransfer ? '' : isIncome ? '+ ' : '- '}
         {formatMoney(t.amount, t.currency)}
       </AppText>
     </Pressable>

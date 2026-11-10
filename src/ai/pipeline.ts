@@ -3,16 +3,19 @@
 //
 // Privacy (see project rules): Gemini only receives phrases, titles, amounts, dates, category and tag
 // names. Never account numbers, balances, names of people or raw bank notifications.
+// About accounts it gets only their names and kind (to pick one when dictating); the chat gets
+// nothing about accounts at all.
 
 import { File } from 'expo-file-system';
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { createTransaction, listAiRules, listBudgets, listCategories, listRecentTransactions, listTags } from '../db/repo';
-import type { AiRule, Category, Kind, TransactionSource } from '../db/types';
+import type { AccountType, AiRule, Category, Kind, TransactionKind, TransactionSource } from '../db/types';
 import { startOfDay, withCurrentTime } from '../lib/dates';
 import { DEFAULT_CURRENCY, formatMoney } from '../lib/money';
 import { normalizeTag, parseTags } from '../lib/tags';
 import { capitalizeFirst, normalize } from '../lib/text';
+import { type AccountRef, guessTransfer, pickPaymentAccount } from './accountMatcher';
 import { type CategorySuggestion, type HistoryItem, matchRule, suggestLocally } from './categorizer';
 import { getApiKey, getModel } from './config';
 import { suggestEmojisLocally } from './emoji';
@@ -26,14 +29,17 @@ export interface AiContext {
   rules: AiRule[];
   history: HistoryItem[];
   tags: string[];
+  /** Name and kind of the user's accounts. Balances are deliberately not loaded here. */
+  accounts: AccountRef[];
 }
 
 export async function loadAiContext(db: SQLiteDatabase, listId: string): Promise<AiContext> {
-  const [categories, rules, recent, tags] = await Promise.all([
+  const [categories, rules, recent, tags, accounts] = await Promise.all([
     listCategories(db, listId),
     listAiRules(db, listId),
     listRecentTransactions(db, listId, 400),
     listTags(db, listId),
+    db.getAllAsync<AccountRef>('SELECT id, name, type FROM accounts WHERE deleted_at IS NULL ORDER BY sort_order, created_at'),
   ]);
   return {
     categories,
@@ -43,6 +49,7 @@ export async function loadAiContext(db: SQLiteDatabase, listId: string): Promise
       .filter((t) => t.source !== 'notification' && t.source !== 'sms')
       .flatMap((t) => (t.kind === 'transfer' ? [] : [{ title: t.title, categoryId: t.category_id, kind: t.kind }])),
     tags: tags.map((t) => t.name),
+    accounts,
   };
 }
 
@@ -181,7 +188,7 @@ export interface CreatedMovement {
   id: string;
   title: string;
   amount: number;
-  kind: Kind;
+  kind: TransactionKind;
   categoryId: string | null;
   occurredAt: number;
 }
@@ -189,16 +196,22 @@ export interface CreatedMovement {
 export interface CaptureResult {
   transcript: string;
   created: CreatedMovement[];
+  /** Something that was understood but could not be saved (a transfer without its accounts). */
+  warning?: string;
 }
 
 interface DraftMovement {
   title: string;
   amount: number;
-  kind: Kind;
+  kind: TransactionKind;
   /** Category name proposed by Gemini, if any. */
   category?: string;
   occurredAt: number | null;
   tags?: string[];
+  /** Account paid from / received in; for a transfer, where the money left. */
+  accountId?: string | null;
+  /** Only transfers: where the money arrived. */
+  toAccountId?: string | null;
 }
 
 const EXTRACTION_SCHEMA = {
@@ -212,12 +225,14 @@ const EXTRACTION_SCHEMA = {
         properties: {
           title: { type: 'string', description: 'Descripción corta (1 a 5 palabras) en español, sin el monto.' },
           amount: { type: 'integer', description: 'Monto en pesos colombianos, entero y positivo.' },
-          kind: { type: 'string', enum: ['expense', 'income'] },
+          kind: { type: 'string', enum: ['expense', 'income', 'transfer'] },
           category: { type: 'string', description: 'Nombre exacto de una categoría de la lista, o vacío.' },
+          account: { type: 'string', description: 'Nombre exacto de una cuenta del usuario, o vacío.' },
+          to_account: { type: 'string', description: 'Solo si kind es transfer: nombre exacto de la cuenta de destino. Si no, vacío.' },
           date: { type: 'string', description: 'Fecha YYYY-MM-DD.' },
           tags: { type: 'array', items: { type: 'string' }, description: 'Solo etiquetas existentes que el usuario mencionó.' },
         },
-        required: ['title', 'amount', 'kind', 'category', 'date', 'tags'],
+        required: ['title', 'amount', 'kind', 'category', 'account', 'to_account', 'date', 'tags'],
       },
     },
   },
@@ -226,10 +241,41 @@ const EXTRACTION_SCHEMA = {
 
 interface ExtractionAnswer {
   transcript?: string;
-  transactions?: { title?: string; amount?: number; kind?: string; category?: string; date?: string; tags?: string[] }[];
+  transactions?: {
+    title?: string;
+    amount?: number;
+    kind?: string;
+    category?: string;
+    account?: string;
+    to_account?: string;
+    date?: string;
+    tags?: string[];
+  }[];
 }
 
-function extractionSystem(ctx: AiContext, text: string): string {
+const ACCOUNT_KIND: Record<AccountType, string> = {
+  cash: 'efectivo',
+  savings: 'cuenta de banco',
+  wallet: 'billetera digital',
+  credit: 'tarjeta de crédito',
+  broker: 'bróker',
+  asset: 'inversión',
+};
+
+/** What Gemini learns about the accounts: names and kind, so it can pick one. Nothing else. */
+function accountRules(accounts: AccountRef[]): string[] {
+  if (accounts.length === 0) {
+    return ['- account y to_account: siempre vacíos. kind nunca es "transfer".'];
+  }
+  return [
+    '- account: el nombre EXACTO de la cuenta del usuario con la que pagó o donde recibió, solo si la menciona. Si no la menciona, vacío.',
+    '- Si movió plata entre sus PROPIAS cuentas (retiro en cajero, pasar de una cuenta a otra, pagar la tarjeta de crédito): kind = "transfer", account = cuenta de origen, to_account = cuenta de destino, category vacío. Un retiro en cajero entra a la cuenta de efectivo. Si no puedes saber las dos cuentas, deja vacía la que falte.',
+    '- Mandarle plata a otra persona NO es "transfer": es un gasto.',
+    `Cuentas del usuario (solo nombres):\n${accounts.map((a) => `- ${a.name} (${ACCOUNT_KIND[a.type]})`).join('\n')}`,
+  ];
+}
+
+export function extractionSystem(ctx: AiContext, text: string): string {
   return [
     'Eres el asistente de una app de finanzas personales en Colombia. Conviertes lo que dice el usuario en movimientos.',
     todayLine(),
@@ -242,6 +288,7 @@ function extractionSystem(ctx: AiContext, text: string): string {
     '- title: corto, en español, con mayúscula inicial, sin el monto ni la fecha. Corrige errores de dictado (por ejemplo "McFlurry").',
     '- category: el nombre EXACTO de una categoría de la lista, o vacío si ninguna encaja.',
     '- tags: solo etiquetas de la lista que el usuario mencionó (por ejemplo "con tarjeta de crédito" → credito). Sin "#".',
+    ...accountRules(ctx.accounts),
     `Categorías:\n${categoryLines(ctx.categories)}`,
     `Etiquetas existentes: ${ctx.tags.length ? ctx.tags.join(', ') : '(ninguna)'}`,
     preferenceLines(ctx, text),
@@ -260,17 +307,51 @@ function parseIsoDate(value: string | undefined, now = new Date()): number | nul
 
 function draftsFromAnswer(answer: ExtractionAnswer, ctx: AiContext): DraftMovement[] {
   const known = new Set(ctx.tags);
+  const accountId = (name: string | undefined) =>
+    ctx.accounts.find((a) => normalize(a.name) === normalize(name ?? ''))?.id ?? null;
   return (answer.transactions ?? [])
     .filter((t) => Number.isFinite(t.amount) && (t.amount as number) > 0 && typeof t.title === 'string')
     .slice(0, 10)
-    .map((t) => ({
-      title: capitalizeFirst(String(t.title)).slice(0, 80),
-      amount: Math.round(t.amount as number),
-      kind: t.kind === 'income' ? 'income' : 'expense',
-      category: t.category ?? '',
-      occurredAt: parseIsoDate(t.date),
-      tags: (t.tags ?? []).map(normalizeTag).filter((tag) => known.has(tag)),
-    }));
+    .map((t): DraftMovement => {
+      const kind: TransactionKind = t.kind === 'income' ? 'income' : t.kind === 'transfer' ? 'transfer' : 'expense';
+      return {
+        title: capitalizeFirst(String(t.title)).slice(0, 80),
+        amount: Math.round(t.amount as number),
+        kind,
+        category: kind === 'transfer' ? '' : t.category ?? '',
+        occurredAt: parseIsoDate(t.date),
+        tags: (t.tags ?? []).map(normalizeTag).filter((tag) => known.has(tag)),
+        accountId: accountId(t.account),
+        toAccountId: kind === 'transfer' ? accountId(t.to_account) : null,
+      };
+    });
+}
+
+const TRANSFER_WITHOUT_ACCOUNTS = 'Entendí una transferencia, pero no supe entre qué cuentas. Regístrala con el botón Transferir del panel de cuentas.';
+
+/**
+ * What the phone can read by itself. A transfer between own accounts is recognized first, so
+ * "retiré 80 mil de Davivienda" never becomes an expense.
+ */
+export function localDrafts(text: string, ctx: AiContext, now = new Date()): { drafts: DraftMovement[]; confident: boolean; warning?: string } {
+  const guess = guessTransfer(text, ctx.accounts);
+  if (guess.status === 'unresolved') return { drafts: [], confident: false, warning: guess.reason };
+  if (guess.status === 'ok') {
+    const parsed = parseFreeText(text, now);
+    // One transfer has one amount; anything else is left to Gemini (or to the user).
+    // (`confident` is false when the phrase carries a second amount or something else to read.)
+    if (parsed.movements.length !== 1 || !parsed.confident) {
+      return { drafts: [], confident: false, warning: 'Entendí una transferencia, pero la frase trae algo más. Dila sola, por ejemplo: "retiré 80 mil de Davivienda".' };
+    }
+    const m = parsed.movements[0];
+    return {
+      drafts: [{ title: guess.title, amount: m.amount, kind: 'transfer', occurredAt: m.occurredAt, accountId: guess.fromId, toAccountId: guess.toId }],
+      confident: true,
+    };
+  }
+  const paid = pickPaymentAccount(text, ctx.accounts);
+  const parsed = parseFreeText(paid.text, now);
+  return { drafts: parsed.movements.map((m) => ({ ...m, accountId: paid.accountId })), confident: parsed.confident };
 }
 
 /** Resolves the category with the layers in priority order and saves the movements. */
@@ -280,11 +361,40 @@ async function persist(
   drafts: DraftMovement[],
   ctx: AiContext,
   source: TransactionSource,
-): Promise<CreatedMovement[]> {
+): Promise<{ created: CreatedMovement[]; warning?: string }> {
   const created: CreatedMovement[] = [];
+  let warning: string | undefined;
   const now = Date.now();
   for (const d of drafts) {
-    const ofKind = ctx.categories.filter((c) => c.kind === d.kind);
+    if (d.kind === 'transfer') {
+      // Saved only when both accounts are known; a transfer guessed as an expense would be worse than none.
+      if (!d.accountId || !d.toAccountId || d.accountId === d.toAccountId) {
+        warning = TRANSFER_WITHOUT_ACCOUNTS;
+        continue;
+      }
+      const occurredAt = d.occurredAt ?? now;
+      try {
+        const id = await createTransaction(db, listId, {
+          kind: 'transfer',
+          amount: d.amount,
+          currency: DEFAULT_CURRENCY,
+          category_id: null,
+          account_id: d.accountId,
+          to_account_id: d.toAccountId,
+          title: d.title,
+          tags: d.tags ?? [],
+          occurred_at: occurredAt,
+          source,
+        });
+        created.push({ id, title: d.title, amount: d.amount, kind: 'transfer', categoryId: null, occurredAt });
+      } catch (error) {
+        // For example between currencies, where the amount that arrived is needed.
+        warning = error instanceof Error ? error.message : TRANSFER_WITHOUT_ACCOUNTS;
+      }
+      continue;
+    }
+    const kind: Kind = d.kind;
+    const ofKind = ctx.categories.filter((c) => c.kind === kind);
     const allowed = new Set(ofKind.map((c) => c.id));
     // 1. A rule the user asked to remember always wins over Gemini.
     let categoryId = matchRule(d.title, ctx.rules, allowed);
@@ -293,28 +403,29 @@ async function persist(
       categoryId = ofKind.find((c) => normalize(c.name) === normalize(d.category ?? ''))?.id ?? null;
     }
     // 3. History and dictionary.
-    if (!categoryId) categoryId = suggestLocally(d.title, d.kind, ctx.categories, ctx.rules, ctx.history)?.categoryId ?? null;
+    if (!categoryId) categoryId = suggestLocally(d.title, kind, ctx.categories, ctx.rules, ctx.history)?.categoryId ?? null;
 
     const occurredAt = d.occurredAt ?? now;
     const id = await createTransaction(db, listId, {
-      kind: d.kind,
+      kind,
       amount: d.amount,
       currency: DEFAULT_CURRENCY,
       category_id: categoryId,
+      account_id: d.accountId ?? null,
       title: d.title,
       tags: d.tags ?? [],
       occurred_at: occurredAt,
       source,
     });
-    created.push({ id, title: d.title, amount: d.amount, kind: d.kind, categoryId, occurredAt });
+    created.push({ id, title: d.title, amount: d.amount, kind, categoryId, occurredAt });
   }
-  return created;
+  return { created, warning };
 }
 
 /** Typed phrase: local parser first, Gemini when the phrase is complex (and a key exists). */
 export async function createFromText(db: SQLiteDatabase, listId: string, text: string): Promise<CaptureResult> {
   const ctx = await loadAiContext(db, listId);
-  const local = parseFreeText(text);
+  const local = localDrafts(text, ctx);
   const aiReady = await isAiConfigured();
 
   if (!local.confident && aiReady) {
@@ -328,16 +439,22 @@ export async function createFromText(db: SQLiteDatabase, listId: string, text: s
     });
     const drafts = draftsFromAnswer(answer, ctx);
     if (drafts.length === 0) throw new AiError('No encontré ningún monto en lo que escribiste.', 'format');
-    return { transcript: text, created: await persist(db, listId, drafts, ctx, 'manual') };
+    return finishCapture(text, await persist(db, listId, drafts, ctx, 'manual'));
   }
 
-  if (local.movements.length === 0) {
+  if (local.drafts.length === 0) {
     throw new AiError(
-      aiReady ? 'No encontré ningún monto.' : 'No encontré ningún monto. Prueba con algo como "almuerzo 18 mil".',
+      local.warning ?? (aiReady ? 'No encontré ningún monto.' : 'No encontré ningún monto. Prueba con algo como "almuerzo 18 mil".'),
       'format',
     );
   }
-  return { transcript: text, created: await persist(db, listId, local.movements, ctx, 'manual') };
+  return finishCapture(text, await persist(db, listId, local.drafts, ctx, 'manual'));
+}
+
+/** Nothing saved and a reason why: that reason is the error. Otherwise it travels as a warning. */
+function finishCapture(transcript: string, saved: { created: CreatedMovement[]; warning?: string }): CaptureResult {
+  if (saved.created.length === 0) throw new AiError(saved.warning ?? 'No se pudo guardar ningún movimiento.', 'format');
+  return { transcript, created: saved.created, warning: saved.warning };
 }
 
 /** Recorded audio: Gemini transcribes and extracts the movements in a single call. */
@@ -360,7 +477,7 @@ export async function createFromAudio(db: SQLiteDatabase, listId: string, uri: s
   if (drafts.length === 0) {
     throw new AiError(transcript ? `Escuché "${transcript}", pero no encontré ningún monto.` : 'No se escuchó nada. Intenta de nuevo.', 'format');
   }
-  return { transcript, created: await persist(db, listId, drafts, ctx, 'voice') };
+  return finishCapture(transcript, await persist(db, listId, drafts, ctx, 'voice'));
 }
 
 // ---------- Chat ----------

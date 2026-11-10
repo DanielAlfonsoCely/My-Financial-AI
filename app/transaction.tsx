@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { containsAmount, parseFreeText } from '../src/ai/localParser';
 import { type CategorySuggestion, suggestLocally } from '../src/ai/categorizer';
 import { loadAiContext, suggestCategory } from '../src/ai/pipeline';
+import { AccountChips } from '../src/components/AccountChips';
 import { AmountInput } from '../src/components/AmountInput';
 import { AppText } from '../src/components/AppText';
 import { CategoryChips } from '../src/components/CategoryChips';
@@ -19,24 +20,34 @@ import {
   createAiRule,
   deleteTransaction,
   getRecurring,
+  getSetting,
   getTransaction,
+  listAccounts,
   listCategories,
   listTags,
   saveTransaction,
+  SETTING_LAST_ACCOUNT,
 } from '../src/db/repo';
-import type { Category, Kind, TransactionInput } from '../src/db/types';
+import type { AccountWithBalance, Category, TransactionInput, TransactionKind } from '../src/db/types';
 import { useCurrentList } from '../src/hooks/useData';
 import { useKeyboardInset } from '../src/hooks/useKeyboardInset';
+import { balanceAfter, type MovementMoney } from '../src/lib/accounts';
 import { checkBudgetAlerts } from '../src/lib/budgetAlert';
 import { dayLabel, withCurrentTime } from '../src/lib/dates';
-import { onCategoryCreated } from '../src/lib/events';
+import { onCategoryCreated, onDataChanged } from '../src/lib/events';
 import { DEFAULT_CURRENCY, formatMoney } from '../src/lib/money';
 import { REPEAT_OPTIONS, type Repeat, repeatLabel } from '../src/lib/recurrence';
 import { parseTags } from '../src/lib/tags';
 import { showToast } from '../src/lib/toast';
 import { colors, fonts, radius } from '../src/theme';
 
-type Params = { id?: string; kind?: string; categoryId?: string };
+type Params = { id?: string; kind?: string; categoryId?: string; accountId?: string };
+
+const KIND_LABEL: Record<TransactionKind, string> = { expense: 'Gasto', income: 'Ingreso', transfer: 'Transferir' };
+
+function initialKind(value: string | undefined): TransactionKind {
+  return value === 'income' || value === 'transfer' ? value : 'expense';
+}
 
 export default function TransactionScreen() {
   const db = useSQLiteContext();
@@ -47,7 +58,13 @@ export default function TransactionScreen() {
   const keyboard = useKeyboardInset();
 
   const [listId, setListId] = useState<string | null>(null);
-  const [kind, setKind] = useState<Kind>(params.kind === 'income' ? 'income' : 'expense');
+  const [kind, setKind] = useState<TransactionKind>(initialKind(params.kind));
+  const [accounts, setAccounts] = useState<AccountWithBalance[]>([]);
+  // Where the money leaves (expense, transfer) or arrives (income). null = "sin cuenta".
+  const [accountId, setAccountId] = useState<string | null>(typeof params.accountId === 'string' && params.accountId ? params.accountId : null);
+  const [toAccountId, setToAccountId] = useState<string | null>(null);
+  // Transfer between currencies: what arrived, in the destination's currency.
+  const [toDigits, setToDigits] = useState('');
   const [title, setTitle] = useState('');
   const [digits, setDigits] = useState('');
   const [categoryId, setCategoryId] = useState<string | null>(typeof params.categoryId === 'string' ? params.categoryId : null);
@@ -67,7 +84,7 @@ export default function TransactionScreen() {
   const [suggestion, setSuggestion] = useState<CategorySuggestion | null>(null);
   const userPicked = useRef(typeof params.categoryId === 'string');
   // What the movement was when the sheet opened, to tell a new expense from an edited one.
-  const original = useRef<{ kind: Kind; amount: number; categoryId: string | null } | null>(null);
+  const original = useRef<(MovementMoney & { categoryId: string | null }) | null>(null);
   const repeatRef = useRef<HostInstance>(null);
   const amountRef = useRef<TextInputInstance>(null);
 
@@ -79,11 +96,19 @@ export default function TransactionScreen() {
           router.back();
           return;
         }
-        // TODO(bloque C): la hoja todavía no edita transferencias; se abren como gasto hasta que exista el segmento Transferir.
-        const shownKind: Kind = t.kind === 'income' ? 'income' : 'expense';
-        original.current = { kind: shownKind, amount: t.amount, categoryId: t.category_id };
+        original.current = {
+          kind: t.kind,
+          amount: t.amount,
+          account_id: t.account_id,
+          to_account_id: t.to_account_id,
+          to_amount: t.to_amount,
+          categoryId: t.category_id,
+        };
         setListId(t.list_id);
-        setKind(shownKind);
+        setKind(t.kind);
+        setAccountId(t.account_id);
+        setToAccountId(t.to_account_id);
+        setToDigits(t.to_amount ? String(t.to_amount) : '');
         setTitle(t.title);
         setDigits(String(t.amount));
         setCategoryId(t.category_id);
@@ -105,6 +130,22 @@ export default function TransactionScreen() {
     }
   }, [db, editingId, listLoaded, currentListId]);
 
+  // Accounts are global. A new movement starts with the account used last time.
+  useEffect(() => {
+    const load = () => listAccounts(db).then(setAccounts);
+    load();
+    return onDataChanged(load);
+  }, [db]);
+
+  useEffect(() => {
+    if (editingId || accountId) return;
+    getSetting(db, SETTING_LAST_ACCOUNT).then((last) => {
+      if (last) setAccountId((current) => current ?? last);
+    });
+    // Only once, when the sheet opens for a new movement.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [db, editingId]);
+
   useEffect(() => {
     if (!listId) return;
     listCategories(db, listId).then(setCategories);
@@ -125,12 +166,35 @@ export default function TransactionScreen() {
 
   const ofKind = useMemo(() => categories.filter((c) => c.kind === kind), [categories, kind]);
   const amount = Number(digits || '0');
-  const tint = kind === 'income' ? colors.income : colors.accent;
-  const canSave = amount > 0 && !saving && listId !== null;
+  const isTransfer = kind === 'transfer';
+  const tint = kind === 'income' ? colors.income : isTransfer ? colors.text : colors.accent;
+  // An archived account (or the remembered one, if it was deleted) is simply not offered.
+  const from = accounts.find((a) => a.id === accountId) ?? null;
+  const to = accounts.find((a) => a.id === toAccountId) ?? null;
+  const crossCurrency = isTransfer && !!from && !!to && from.currency !== to.currency;
+  const toAmount = Number(toDigits || '0');
+  const transferReady = !isTransfer || (!!from && !!to && from.id !== to.id && (!crossCurrency || toAmount > 0));
+  const canSave = amount > 0 && !saving && listId !== null && transferReady;
+
+  // "Davivienda queda en $2.450.000 · Efectivo en $180.000"
+  const resulting = useMemo(() => {
+    if (!isTransfer || !from || !to || from.id === to.id || amount <= 0) return null;
+    const next: MovementMoney = {
+      kind: 'transfer',
+      amount,
+      account_id: from.id,
+      to_account_id: to.id,
+      to_amount: crossCurrency ? toAmount || null : null,
+    };
+    if (crossCurrency && !next.to_amount) return null;
+    const line = (a: AccountWithBalance, first: boolean) =>
+      `${a.name} ${first ? 'queda en' : 'en'} ${formatMoney(balanceAfter(a, next, original.current), a.currency)}`;
+    return `${line(from, true)} · ${line(to, false)}`;
+  }, [isTransfer, from, to, amount, crossCurrency, toAmount]);
 
   // Local suggestion while typing (no network): rules, history and the keyword dictionary.
   useEffect(() => {
-    if (!listId || userPicked.current || !title.trim()) return;
+    if (!listId || userPicked.current || !title.trim() || kind === 'transfer') return;
     const timer = setTimeout(async () => {
       const ctx = await loadAiContext(db, listId);
       const local = suggestLocally(title, kind, ctx.categories, ctx.rules, ctx.history);
@@ -142,8 +206,10 @@ export default function TransactionScreen() {
     return () => clearTimeout(timer);
   }, [db, listId, title, kind]);
 
-  const switchKind = (next: Kind) => {
+  const switchKind = (next: TransactionKind) => {
     setKind(next);
+    // A transfer has no category and does not repeat.
+    if (next === 'transfer') setRepeat('once');
     if (categories.find((c) => c.id === categoryId)?.kind !== next) {
       setCategoryId(null);
       setSuggestion(null);
@@ -153,7 +219,7 @@ export default function TransactionScreen() {
 
   /** When the title loses focus: read amounts typed in it, then ask Gemini if nothing local matched. */
   const onTitleBlur = async () => {
-    if (!listId) return;
+    if (!listId || kind === 'transfer') return;
     let currentTitle = title;
     let currentKind = kind;
     if (!digits && containsAmount(title)) {
@@ -201,15 +267,32 @@ export default function TransactionScreen() {
   };
 
   const finish = (input: TransactionInput) => {
+    if (input.kind === 'transfer') {
+      showToast({
+        kind: 'success',
+        emoji: '🔁',
+        title: from && to ? `${from.name} → ${to.name}` : 'Transferencia',
+        chip: formatMoney(input.amount, from?.currency),
+      });
+      router.back();
+      return;
+    }
     const category = categories.find((c) => c.id === input.category_id);
     showToast({
       kind: 'success',
       emoji: category?.emoji ?? (input.kind === 'income' ? '💵' : '🧾'),
       color: category?.color,
       title: category?.name ?? (input.title || 'Movimiento'),
-      chip: `${input.kind === 'income' ? '+' : '-'} ${formatMoney(input.amount)}`,
+      chip: `${input.kind === 'income' ? '+' : '-'} ${formatMoney(input.amount, from?.currency)}`,
     });
     router.back();
+  };
+
+  /** Origin and destination trade places. */
+  const swapAccounts = () => {
+    setAccountId(toAccountId);
+    setToAccountId(accountId);
+    setToDigits('');
   };
 
   const save = async () => {
@@ -219,7 +302,11 @@ export default function TransactionScreen() {
       kind,
       amount,
       currency: DEFAULT_CURRENCY,
-      category_id: categoryId,
+      category_id: isTransfer ? null : categoryId,
+      // An archived account is not offered, but editing the movement must not drop it.
+      account_id: from ? from.id : accountId && accountId === original.current?.account_id ? undefined : null,
+      to_account_id: isTransfer ? to?.id ?? null : null,
+      to_amount: crossCurrency ? toAmount : null,
       title: title.trim(),
       tags,
       occurred_at: date.getTime(),
@@ -229,7 +316,7 @@ export default function TransactionScreen() {
       const savedId = await saveTransaction(db, listId, { id: editingId, input, repeat, recurringId });
       const before = original.current;
       const alreadyCounted = before && before.kind === 'expense' && before.categoryId === input.category_id ? before.amount : 0;
-      void checkBudgetAlerts(db, [{ id: savedId, alreadyCounted }]);
+      if (!isTransfer) void checkBudgetAlerts(db, [{ id: savedId, alreadyCounted }]);
     } catch (error) {
       setSaving(false);
       Alert.alert('No se pudo guardar', error instanceof Error ? error.message : String(error));
@@ -237,7 +324,7 @@ export default function TransactionScreen() {
     }
 
     // "Mejoras de IA": the user corrected an automatic category.
-    const corrected = suggestion && categoryId && categoryId !== suggestion.categoryId && input.title;
+    const corrected = !isTransfer && suggestion && categoryId && categoryId !== suggestion.categoryId && input.title;
     if (corrected) {
       const chosen = categories.find((c) => c.id === categoryId);
       Alert.alert(
@@ -265,6 +352,11 @@ export default function TransactionScreen() {
     finish(input);
   };
 
+  const newAccount = () => {
+    Keyboard.dismiss();
+    router.push('/account');
+  };
+
   const remove = () => {
     if (!editingId) return;
     Alert.alert('Eliminar movimiento', '¿Seguro? Esta acción no se puede deshacer.', [
@@ -284,9 +376,9 @@ export default function TransactionScreen() {
     <View style={[styles.screen, { paddingTop: insets.top + 8 }]} onLayout={keyboard.onLayout}>
       <View style={styles.header}>
         <View style={styles.segment}>
-          {(['expense', 'income'] as const).map((k) => {
+          {(['expense', 'income', 'transfer'] as const).map((k) => {
             const active = kind === k;
-            const color = k === 'income' ? colors.income : colors.accent;
+            const color = k === 'income' ? colors.income : k === 'transfer' ? colors.text : colors.accent;
             return (
               <Pressable
                 key={k}
@@ -296,7 +388,7 @@ export default function TransactionScreen() {
                 accessibilityState={{ selected: active }}
               >
                 <AppText weight="bold" size={14} color={active ? colors.surface : colors.textMuted}>
-                  {k === 'expense' ? 'Gasto' : 'Ingreso'}
+                  {KIND_LABEL[k]}
                 </AppText>
               </Pressable>
             );
@@ -318,13 +410,15 @@ export default function TransactionScreen() {
             </AppText>
             <Feather name="chevron-down" size={14} color={colors.text} />
           </Pressable>
-          <Pressable ref={repeatRef} onPress={openRepeat} style={styles.metaChip}>
-            {repeat !== 'once' && <Feather name="repeat" size={12} color={colors.text} />}
-            <AppText weight="semibold" size={13}>
-              {repeatLabel(repeat)}
-            </AppText>
-            <Feather name="chevron-down" size={14} color={colors.text} />
-          </Pressable>
+          {!isTransfer && (
+            <Pressable ref={repeatRef} onPress={openRepeat} style={styles.metaChip}>
+              {repeat !== 'once' && <Feather name="repeat" size={12} color={colors.text} />}
+              <AppText weight="semibold" size={13}>
+                {repeatLabel(repeat)}
+              </AppText>
+              <Feather name="chevron-down" size={14} color={colors.text} />
+            </Pressable>
+          )}
         </View>
 
         <TextInput
@@ -332,7 +426,7 @@ export default function TransactionScreen() {
           onChangeText={setTitle}
           onBlur={onTitleBlur}
           onSubmitEditing={() => amountRef.current?.focus()}
-          placeholder={kind === 'expense' ? '¿En qué gastaste?' : '¿De dónde vino?'}
+          placeholder={kind === 'expense' ? '¿En qué gastaste?' : kind === 'income' ? '¿De dónde vino?' : 'Retiro, pago de tarjeta…'}
           placeholderTextColor={colors.textFaint}
           autoFocus={!editingId}
           multiline={false}
@@ -344,14 +438,58 @@ export default function TransactionScreen() {
 
         <AmountInput ref={amountRef} digits={digits} onChangeDigits={setDigits} color={tint} onSubmitEditing={() => Keyboard.dismiss()} />
 
-        <CategoryChips
-          categories={ofKind}
-          selectedId={categoryId}
-          expanded={expanded || !categoryId}
-          onToggle={() => setExpanded(true)}
-          onSelect={pickCategory}
-          onAdd={() => router.push({ pathname: '/category', params: { kind, listId: listId ?? '' } })}
-        />
+        {!isTransfer && (
+          <CategoryChips
+            categories={ofKind}
+            selectedId={categoryId}
+            expanded={expanded || !categoryId}
+            onToggle={() => setExpanded(true)}
+            onSelect={pickCategory}
+            onAdd={() => router.push({ pathname: '/category', params: { kind, listId: listId ?? '' } })}
+          />
+        )}
+
+        {isTransfer ? (
+          <View style={styles.transfer}>
+            <AccountChips label="Sale de" accounts={accounts} selectedId={accountId} excludeId={toAccountId} onSelect={setAccountId} onAdd={newAccount} />
+            <Pressable onPress={swapAccounts} style={styles.swap} accessibilityLabel="Invertir origen y destino" hitSlop={8}>
+              <Feather name="repeat" size={16} color={colors.text} style={styles.swapIcon} />
+            </Pressable>
+            <AccountChips label="Entra a" accounts={accounts} selectedId={toAccountId} excludeId={accountId} onSelect={setToAccountId} onAdd={newAccount} />
+            {crossCurrency && to && (
+              <View style={styles.arrived}>
+                <AppText weight="semibold" size={12} color={colors.textMuted}>
+                  Llegó a {to.name} ({to.currency}, en centavos si la moneda los usa)
+                </AppText>
+                <TextInput
+                  value={toDigits}
+                  onChangeText={(text) => setToDigits(text.replace(/\D/g, '').slice(0, 12))}
+                  keyboardType="number-pad"
+                  placeholder="0"
+                  placeholderTextColor={colors.textFaint}
+                  style={styles.arrivedInput}
+                />
+                {toAmount > 0 && (
+                  <AppText size={12} color={colors.textMuted}>
+                    {formatMoney(toAmount, to.currency)} {to.currency}
+                  </AppText>
+                )}
+              </View>
+            )}
+            <AppText size={12} color={colors.textMuted}>
+              {resulting ?? (accounts.length < 2 ? 'Necesitas al menos dos cuentas para transferir.' : 'No cuenta como gasto ni como ingreso.')}
+            </AppText>
+          </View>
+        ) : (
+          <AccountChips
+            label={kind === 'income' ? 'Entra a' : 'Sale de'}
+            accounts={accounts}
+            selectedId={accountId}
+            onSelect={setAccountId}
+            optional
+            onAdd={newAccount}
+          />
+        )}
 
         {!tagMode && tags.length > 0 && (
           <Pressable onPress={() => setTagMode(true)} style={styles.tagsPreview}>
@@ -430,9 +568,34 @@ const styles = StyleSheet.create({
     padding: 3,
   },
   segmentItem: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: radius.pill,
+  },
+  transfer: {
+    gap: 8,
+  },
+  swap: {
+    alignSelf: 'flex-start',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.chip,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  swapIcon: {
+    transform: [{ rotate: '90deg' }],
+  },
+  arrived: {
+    gap: 4,
+  },
+  arrivedInput: {
+    fontFamily: fonts.bold,
+    fontSize: 22,
+    color: colors.text,
+    padding: 0,
+    includeFontPadding: false,
   },
   body: {
     flexGrow: 1,

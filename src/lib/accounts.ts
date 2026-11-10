@@ -101,3 +101,31 @@ export function creditUsage(account: AccountWithBalance): number | null {
 export function formatShare(share: number): string {
   return `${(Math.round(share * 1000) / 10).toString().replace('.', ',')}%`;
 }
+
+/** The parts of a movement that move money in an account. */
+export interface MovementMoney {
+  kind: 'expense' | 'income' | 'transfer';
+  amount: number;
+  account_id: string | null;
+  to_account_id: string | null;
+  to_amount: number | null;
+}
+
+/**
+ * How much a movement changes the balance of an account (0 if it does not touch it). For a credit
+ * account the balance is debt, so the sign is the opposite: buying raises it, paying lowers it.
+ */
+export function movementEffect(account: { id: string; type: AccountType }, m: MovementMoney): number {
+  let change = 0;
+  if (m.account_id === account.id) change += m.kind === 'income' ? m.amount : -m.amount;
+  if (m.kind === 'transfer' && m.to_account_id === account.id) change += m.to_amount ?? m.amount;
+  return isLiability(account) ? -change : change;
+}
+
+/**
+ * Balance the account will show after saving `next`. When editing, `previous` is the movement as
+ * it is saved now: its effect is already inside the balance and is taken out first.
+ */
+export function balanceAfter(account: AccountWithBalance, next: MovementMoney, previous: MovementMoney | null): number {
+  return account.balance - (previous ? movementEffect(account, previous) : 0) + movementEffect(account, next);
+}
