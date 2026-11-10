@@ -13,19 +13,13 @@ Contexto del proyecto para Claude Code (antes era `.kiro/`).
 | `commands/` | Comandos: `/verificar`, `/revisar`, `/cerrar-bloque A` |
 | `settings.json` | Permisos para comandos de verificación sin preguntar |
 
-## Instalar en otro PC
+## En otro PC
 
-Descomprimir en la raíz del repo `My-Financial-AI` (al lado de `app/` y `src/`) y abrir Claude Code ahí.
+Viene con el repo: clonar y abrir Claude Code en la raíz. No copiar esta carpeta a un nivel superior (por ejemplo
+`~/Documents/.claude/`): se cargaría dos veces y aplicaría a otros proyectos.
 
-## ¿Va a GitHub?
+## En GitHub
 
-`.kiro/` no se subía. Para tener esto en cualquier PC sin copiar zips, se puede subir todo menos las capturas de
-MonAi (12 MB, de otra empresa). Agregar al `.gitignore`:
-
-```
-.claude/design/TikTok/
-.claude/design/Video Yt/
-.claude/settings.local.json
-```
-
-Si prefieres que nada de esto quede en GitHub, en vez de eso agrega `.claude/` a `.git/info/exclude`.
+Esta carpeta va en el repo (decidido 10 nov 2026) menos las capturas de MonAi (12 MB, de otra empresa) y los ajustes
+locales, que están en el `.gitignore`: `.claude/design/TikTok/`, `.claude/design/Video Yt/` y
+`.claude/settings.local.json`. Las capturas viven solo en el PC de Daniel; en otro PC hay que copiarlas a mano.

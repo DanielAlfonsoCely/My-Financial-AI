@@ -7,7 +7,8 @@ Base: rama `rediseno-v2-seguridad` @ `9fba0d7` (11.100 líneas, `tsc --noEmit` l
 y presupuestos, listas, etiquetas, recurrentes, búsqueda, voz, chat, Mejoras de IA, PIN/huella, respaldo). Este trabajo es:
 (A) cambiar la piel para que deje de parecer MonAi, (B) corregir lo de la auditoría, (C) volver real el panel de
 cuentas con grupos y transferencias, (D) inversiones, más (E) un botón temporal de datos de prueba que crece con cada
-bloque. En ese orden, una rama y un PR por bloque.
+bloque. Una rama y un PR por bloque. **Orden real: B → A → C → D** (B se hizo primero, el 10 nov, porque
+arreglaba datos; la letra de cada sección no cambia).
 
 Convenciones del repo que siguen valiendo: migraciones solo agregando (nunca editar v1/v2), enteros para plata,
 UUID + `created_at/updated_at/deleted_at`, `notifyDataChanged()` tras escribir, nada nativo fuera de Expo Go sin avisar,
@@ -93,7 +94,12 @@ export const radius = { sm: 14, md: 18, lg: 24, pill: 999 } as const;
 
 ---
 
-## B. Auditoría
+## B. Auditoría ✅ (hecho el 10 nov 2026, rama `bloque-b-auditoria`)
+
+Los 15 puntos están cerrados; el detalle de cómo quedó cada uno está en `docs/estado.md`. Cambios frente a lo que
+decía la tabla: B2 conserva lo que el usuario ya tiene pero deja el primer arranque como estaba; B3 usa una cola
+única de escrituras sobre la conexión principal (la transacción exclusiva abre otra conexión, sin claves foráneas);
+B8 deja `allowBackup: true` con checkpoint del WAL y agrega "Ocultar en recientes"; B14 se hizo completo.
 
 La revisión del 31-oct listó 20 problemas; **la mayoría ya está corregida** en `9fba0d7` (voz, parser, fallback de
 Gemini, teclado, candado de recurrentes, remapeo de listas en el respaldo). Lo que sigue abierto o es nuevo:
@@ -126,7 +132,7 @@ espacio del teclado, voz con clave real, MIME `audio/m4a` en la Interactions API
 Partir de la maqueta (columnas, tarjeta con cupo punteado, filas) y volverla real, con grupos, vista general/agrupada
 y activos/pasivos separados (detalle más abajo):
 
-**Migración v3** (junto con el arreglo B1). SQLite no altera un `CHECK`: recrear `transactions` copiando datos.
+**Migración v4** (la v3 ya la usó el arreglo B1). SQLite no altera un `CHECK`: recrear `transactions` copiando datos.
 
 ```sql
 CREATE TABLE account_groups (
@@ -225,7 +231,7 @@ UI de movimientos:
 - **¿Mismo balance que XTB?** Cantidades y costo: exactos. Valor: igual al cierre; con mercado abierto difiere por
   centavos (retraso + XTB valora al *bid*). Mostrar siempre "actualizado hace X · con retraso" y la TRM usada.
 
-### Modelo (migración v4)
+### Modelo (migración v5)
 
 ```sql
 instruments(id, symbol, name, exchange, currency, provider_symbol, created_at, updated_at, deleted_at)
@@ -294,7 +300,8 @@ hardcodeados), para probar todo sin crearlo a mano. Incluye inversiones con el s
 
 ## G. Definición de terminado por bloque
 
-- `tsc`, lint y tests en verde; migración probada partiendo de una BD v1 **y** de una v2 con datos.
+- `tsc`, lint y tests en verde; migración probada partiendo de una BD v1 **y** de una v2 con datos (tests en
+  `src/db/__tests__/migrations.test.ts`: agregar ahí los casos de cada migración nueva).
 - Respaldo: exportar en la versión nueva → importar en instalación limpia → mismos totales y saldos. Un respaldo
   formato 2 sigue importando.
 - Nada nativo de Android a la vista. Probado en el A34 con letra grande del sistema.

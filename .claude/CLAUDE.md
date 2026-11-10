@@ -20,7 +20,10 @@ componentes nativos). No usa marca, logo ni assets de MonAi.
 
 - **Expo SDK 58** (React Native 0.88, React 19.3), TypeScript estricto, **expo-router**.
 - **SQLite local** con `expo-sqlite` y SQL directo (sin ORM). Migraciones con `PRAGMA user_version` en
-  `src/db/migrations.ts`: **nunca se edita una migración existente**, siempre se agrega una nueva.
+  `src/db/migrations.ts`: **nunca se edita una migración existente**, siempre se agrega una nueva. Va en la **v3**
+  (v4 será cuentas, v5 inversiones).
+- **Pruebas:** `jest-expo` (`npm test`), ESLint (`npm run lint`) y CI en GitHub Actions. La capa de datos se prueba
+  contra SQLite real en memoria con `src/test/sqlite.ts` (`openTestDatabase()`), sin simular consultas.
 - Fuente actual Nunito (se cambia a Figtree + Bricolage Grotesque en el bloque A). Íconos: Feather (`@expo/vector-icons`).
 - `react-dom` fijado en `19.3.0` por un conflicto de peer deps con react 19.3.0.
 
@@ -36,10 +39,11 @@ componentes nativos). No usa marca, logo ni assets de MonAi.
 Ver `docs/estado.md` (se actualiza al cerrar cada tarea). Resumen al 10 nov 2026:
 
 - `main`: Fase 1 (PR #1). APK de prueba v0.1.0 en la rama `apk-builds`.
-- Rama de trabajo: **`rediseno-v2-seguridad`** (sin PR). Tiene: inicio v2, bloqueo con PIN y huella, panel de cuentas
-  como **maqueta hardcodeada**, migración v2 (listas, etiquetas, recurrentes, presupuestos, reglas de IA), onboarding,
-  búsqueda, hoja de movimiento, voz y chat con Gemini, CSV.
-- Siguiente: bloques A–E de `docs/plan.md`.
+- **`rediseno-v2-seguridad`** (sin PR): inicio v2, bloqueo con PIN y huella, panel de cuentas como **maqueta
+  hardcodeada**, migración v2 (listas, etiquetas, recurrentes, presupuestos, reglas de IA), onboarding, búsqueda,
+  hoja de movimiento, voz y chat con Gemini, CSV.
+- **`bloque-b-auditoria`** (sale de la anterior, sin PR): bloque B completo, migración v3, tests, lint y CI.
+- Siguiente: bloque A de `docs/plan.md`, en una rama nueva desde `bloque-b-auditoria`.
 - Pendiente de probar en el A34: deslizar entre paneles, huella, cursor del monto, espacio del teclado, voz con clave
   real, MIME `audio/m4a` en la Interactions API.
 
@@ -59,16 +63,19 @@ app/tags.tsx · recurring.tsx · lists.tsx · list-edit.tsx
 app/ai-rules.tsx       Mejoras de IA (correcciones recordadas)
 app/ai.tsx             Clave y modelo de Gemini
 app/security.tsx       PIN, huella y tiempo de bloqueo
-src/db/                types, migrations (v1, v2), seed (15 categorías cat-*, lista list-personal), repo (consultas)
+src/db/                types, migrations (v1–v3), seed (15 categorías cat-*, lista list-personal), repo (consultas,
+                       cola de escrituras, saveTransaction, budgetAlertFor, loadCategoryChoices)
 src/ai/                gemini (cliente REST), pipeline, localParser, categorizer, emoji, config (SecureStore)
-src/hooks/             useData (useQuery, useCurrentList), useHomeData, useKeyboardInset
+src/hooks/             useData (useQuery con error/reload, useCurrentList), useHomeData, useKeyboardInset, useToday,
+                       useCheckpointOnBackground
 src/security/LockProvider.tsx
 src/components/        AppText, CategoryBars, TransactionRow, AmountInput, NumPad, PinPad, Sheet, PopoverMenu,
                        Pager, SettingsRow, ScreenHeader, PillButton, CategoryChips, CategoryGrid, TagEditor,
-                       ThresholdSlider, ToastHost, IconButton
+                       ThresholdSlider, ToastHost, IconButton, LoadError
 src/components/home/   PeriodStrip, RangeSheet, DefaultPeriodSheet, SearchBar
 src/components/accounts/AccountsPanel.tsx   MAQUETA (datos de src/lib/mockAccounts.ts)
-src/lib/               money, dates, period, recurrence, tags, text, csv, backup, security, events, toast
+src/lib/               money, dates, period, recurrence, tags, text, csv, backup, security, events, toast, budgetAlert
+src/test/              setup (mocks de módulos nativos), sqlite (expo-sqlite sobre node:sqlite para tests)
 src/theme.ts           Colores, paleta pastel de categorías, fuentes, radios
 ```
 
@@ -78,7 +85,9 @@ src/theme.ts           Colores, paleta pastel de categorías, fuentes, radios
 - Todas las tablas: **UUID**, `created_at`, `updated_at`, `deleted_at` (borrado lógico), para sincronizar a futuro.
 - Movimientos con `source` (`manual|voice|notification|sms|ocr|import|recurring`) y `source_ref` para de-duplicar.
 - Importar respaldo: merge por id, gana el `updated_at` más reciente; importar dos veces no duplica.
-- Toda escritura llama a `notifyDataChanged()`.
+- Toda escritura llama a `notifyDataChanged()` y pasa por la cola de `repo.ts` (`enqueueWrite` / `writeTx`); las
+  pantallas no escriben SQL directo. Dentro de una escritura en cola solo se usan los helpers privados del repo, nunca
+  otra función de escritura exportada (se quedaría esperándose a sí misma). Guardar un movimiento = `saveTransaction`.
 - **Listas:** cada lista es independiente, con sus categorías, etiquetas, presupuestos y reglas de IA.
   **Cuentas: globales**, no por lista (decidido 10 nov).
 - Etiquetas en minúscula y sin espacios ("ropa de verano" → `#ropadeverano`), guardadas como JSON en `transactions.tags`.
@@ -89,6 +98,10 @@ src/theme.ts           Colores, paleta pastel de categorías, fuentes, radios
 - PIN de 4 dígitos con SHA-256 y sal, y config del bloqueo en **SecureStore** (no en SQLite, no entra al respaldo JSON).
 - 5 intentos fallidos → espera de 30 s que se duplica. "¿Olvidaste tu PIN?" usa el bloqueo del celular.
 - Tiempo de bloqueo: de inmediato, 1 min (defecto) o 5 min. `withSystemDialog()` evita el bloqueo en diálogos del sistema.
+- Con PIN: "Ocultar en recientes" (`expo-screen-capture`, activo por defecto) tapa la app en recientes y bloquea
+  capturas. Si Daniel necesita mandar un pantallazo, se apaga en Seguridad.
+- `allowBackup` sigue en `true` (decidido 10 nov): el respaldo de Google es la única red automática hasta que exista
+  el respaldo JSON automático (F8). Al ir a segundo plano se hace `wal_checkpoint(TRUNCATE)`.
 
 ## IA (decidido)
 
@@ -154,16 +167,16 @@ para **cómo funciona** cada pantalla. Para **cómo se ve**, gana el plan y el m
 |---|---|---|
 | Fase 1 | Base, SQLite, inicio, entrada manual, respaldo JSON | ✅ en `main` |
 | Fases 2 y 4 | Voz + IA, chat, presupuestos, categorías, etiquetas, recurrentes, listas, acumulado | ✅ en `rediseno-v2-seguridad` (falta probar en el A34) |
-| A | Identidad (solo piel) | Diseñado |
-| B | Auditoría: 15 puntos, 2 altos (onboarding forzado al actualizar desde v1; onboarding recolorea y oculta categorías) | Pendiente |
-| C | Cuentas reales: grupos, vistas, activos/pasivos, transferencias (migración v3) | Diseñado |
-| D | Inversiones XTB (migración v4) | Diseñado, falta reporte |
+| B | Auditoría: 15 puntos (migración v3, cola de escrituras, tests, lint, CI) | ✅ en `bloque-b-auditoria` (falta probar en el A34) |
+| A | Identidad (solo piel) | Diseñado, **siguiente** |
+| C | Cuentas reales: grupos, vistas, activos/pasivos, transferencias (migración v4) | Diseñado |
+| D | Inversiones XTB (migración v5) | Diseñado, falta reporte |
 | E | Datos de prueba (dev) | Diseñado, crece con cada bloque |
 | Fase 3 | Notificaciones y SMS (Wallet, Davivienda, Nu, Nequi), automático o con confirmación, de-duplicación | Futuro |
 | Fase 5 | Widget, OCR de recibos (ML Kit), "Compartir con la app" | Futuro |
 | Futuro | Correos, sincronización (Supabase), listas compartidas, multimoneda | — |
 
-Orden: una rama y un PR por bloque, A → B → C → D (E va dentro de cada uno).
+Orden: una rama y un PR por bloque, B (hecho) → A → C → D (E va dentro de cada uno).
 
 ### De-duplicación (Fase 3, requisito clave)
 
@@ -180,6 +193,8 @@ por remitente (se piden ejemplos reales a Daniel), nunca con Gemini.
 - **Git:** commits a nombre de Daniel con su `user.name`/`user.email` local, en español y concisos. **Sin** trailers
   `Co-authored-by` y sin mencionar a Claude, Kiro ni la IA en commits ni PRs.
 - No trabajar directo sobre `main`: una rama por bloque y un PR.
-- Antes de dar algo por terminado: `npx tsc --noEmit` y `npx expo-doctor` (y los tests cuando existan).
+- Antes de dar algo por terminado: `npx tsc --noEmit`, `npm run lint`, `npm test` y `npx expo-doctor` (`/verificar`).
+- Lo que toque datos lleva test (migración nueva → casos en `src/db/__tests__/migrations.test.ts`).
+- `.claude/` va en git sin las capturas de MonAi. Nunca `git add -A`: agregar por ruta.
 - Revisiones de código: guardar en `reviews/` con fecha (comando `/revisar`).
-- Nunca editar migraciones existentes; probar migraciones partiendo de una BD v1 y de una v2 con datos.
+- Nunca editar migraciones existentes; probar migraciones partiendo de una BD v1, una v2 y una v3 con datos.
