@@ -17,20 +17,17 @@ import { type Anchor, PopoverMenu } from '../src/components/PopoverMenu';
 import { TagEditor } from '../src/components/TagEditor';
 import {
   createAiRule,
-  createRecurringFrom,
-  createTransaction,
-  deleteRecurring,
   deleteTransaction,
   getRecurring,
   getTransaction,
   listCategories,
   listTags,
-  updateRecurringFrom,
-  updateTransaction,
+  saveTransaction,
 } from '../src/db/repo';
 import type { Category, Kind, TransactionInput } from '../src/db/types';
 import { useCurrentList } from '../src/hooks/useData';
 import { useKeyboardInset } from '../src/hooks/useKeyboardInset';
+import { checkBudgetAlerts } from '../src/lib/budgetAlert';
 import { dayLabel, withCurrentTime } from '../src/lib/dates';
 import { onCategoryCreated } from '../src/lib/events';
 import { DEFAULT_CURRENCY, formatMoney } from '../src/lib/money';
@@ -69,6 +66,8 @@ export default function TransactionScreen() {
   // it, we offer to remember the correction ("Mejoras de IA").
   const [suggestion, setSuggestion] = useState<CategorySuggestion | null>(null);
   const userPicked = useRef(typeof params.categoryId === 'string');
+  // What the movement was when the sheet opened, to tell a new expense from an edited one.
+  const original = useRef<{ kind: Kind; amount: number; categoryId: string | null } | null>(null);
   const repeatRef = useRef<HostInstance>(null);
   const amountRef = useRef<TextInputInstance>(null);
 
@@ -80,6 +79,7 @@ export default function TransactionScreen() {
           router.back();
           return;
         }
+        original.current = { kind: t.kind, amount: t.amount, categoryId: t.category_id };
         setListId(t.list_id);
         setKind(t.kind);
         setTitle(t.title);
@@ -223,23 +223,11 @@ export default function TransactionScreen() {
       occurred_at: date.getTime(),
     };
     try {
-      if (editingId) {
-        if (recurringId && repeat === 'once') {
-          await deleteRecurring(db, recurringId);
-          await updateTransaction(db, editingId, { ...input, recurring_id: null });
-        } else if (recurringId && repeat !== 'once') {
-          await updateRecurringFrom(db, recurringId, input, repeat);
-          await updateTransaction(db, editingId, input);
-        } else if (repeat !== 'once') {
-          const newRecurring = await createRecurringFrom(db, listId, input, repeat);
-          await updateTransaction(db, editingId, { ...input, recurring_id: newRecurring });
-        } else {
-          await updateTransaction(db, editingId, input);
-        }
-      } else {
-        const newRecurring = repeat !== 'once' ? await createRecurringFrom(db, listId, input, repeat) : null;
-        await createTransaction(db, listId, { ...input, recurring_id: newRecurring });
-      }
+      // Movement, recurring template and tags are saved together, or not at all.
+      const savedId = await saveTransaction(db, listId, { id: editingId, input, repeat, recurringId });
+      const before = original.current;
+      const alreadyCounted = before && before.kind === 'expense' && before.categoryId === input.category_id ? before.amount : 0;
+      void checkBudgetAlerts(db, [{ id: savedId, alreadyCounted }]);
     } catch (error) {
       setSaving(false);
       Alert.alert('No se pudo guardar', error instanceof Error ? error.message : String(error));

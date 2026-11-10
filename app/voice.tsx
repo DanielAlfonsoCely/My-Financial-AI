@@ -21,6 +21,7 @@ import { useKeyboardInset } from '../src/hooks/useKeyboardInset';
 import { onDataChanged } from '../src/lib/events';
 import { formatMoney } from '../src/lib/money';
 import { withSystemDialog } from '../src/lib/security';
+import { checkBudgetAlerts } from '../src/lib/budgetAlert';
 import { showToast } from '../src/lib/toast';
 import { colors, fonts, radius } from '../src/theme';
 
@@ -125,6 +126,7 @@ export default function VoiceScreen() {
   );
 
   const showResult = async (capture: CaptureResult) => {
+    void checkBudgetAlerts(db, capture.created.map((c) => ({ id: c.id })));
     // The movements are saved; if the user already left, a toast is enough.
     if (!mounted.current) {
       showToast({ kind: 'success', emoji: '✅', title: `${capture.created.length} movimiento${capture.created.length === 1 ? '' : 's'} agregado${capture.created.length === 1 ? '' : 's'}` });

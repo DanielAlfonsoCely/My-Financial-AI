@@ -13,45 +13,41 @@ import { IconButton } from '../src/components/IconButton';
 import { PillButton } from '../src/components/PillButton';
 import {
   applyCategoryPick,
+  type CategoryChoice,
   getCurrentListId,
   getSetting,
-  type PickedCategory,
+  loadCategoryChoices,
   setSetting,
   SETTING_CURRENT_LIST,
   SETTING_ONBOARDING_DONE,
   SETTING_SHOW_INCOME,
-  suggestedCategories,
-  usedCategoryIds,
 } from '../src/db/repo';
 import type { Category } from '../src/db/types';
 import { onCategoryCreated } from '../src/lib/events';
 import { withSystemDialog } from '../src/lib/security';
-import { normalize } from '../src/lib/text';
 import { showToast } from '../src/lib/toast';
 import { categoryPalette, colors, radius } from '../src/theme';
 
 type Step = 'categories' | 'voice' | 'style';
-type Params = { listId?: string; mode?: string };
+type Params = { listId?: string; mode?: string; replay?: string };
 
-/** Distinct pastel per tile, so every selected category gets its own color (Video Yt/02). */
-const DISTINCT = [10, 1, 4, 3, 11, 5, 2, 6, 12, 13, 9, 7, 14, 15, 0, 8].map((i) => categoryPalette[i]);
+type Item = CategoryChoice;
 
-interface Item extends PickedCategory {
-  key: string;
-  selected: boolean;
-  /** Has transactions: it cannot be unselected. */
-  locked: boolean;
-}
+/** Bars of the little phone in "Elige un estilo". */
+const PREVIEW_COLORS = [10, 1, 4, 3].map((i) => categoryPalette[i]);
 
 /**
  * First run (Video Yt/01–05): "Elige tus categorías" → "Entrada de voz" → "Elige un estilo".
  * With ?mode=list it only shows the categories step, for a new list.
+ * With ?replay=1 ("Ver la bienvenida otra vez") it runs over what the user already has, and
+ * leaving it halfway changes nothing.
  */
 export default function OnboardingScreen() {
   const db = useSQLiteContext();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<Params>();
   const forList = params.mode === 'list';
+  const replay = params.replay === '1';
   const [listId, setListId] = useState<string | null>(typeof params.listId === 'string' && params.listId ? params.listId : null);
   const [step, setStep] = useState<Step>('categories');
   const [items, setItems] = useState<Item[]>([]);
@@ -68,30 +64,8 @@ export default function OnboardingScreen() {
 
   const load = useCallback(async () => {
     if (!listId) return;
-    const [existing, used] = await Promise.all([
-      db.getAllAsync<Category>('SELECT * FROM categories WHERE list_id = ? AND deleted_at IS NULL', listId),
-      usedCategoryIds(db, listId),
-    ]);
-    const suggestions = suggestedCategories(listId);
-    const result: Item[] = suggestions.map((s, i) => {
-      const match = existing.find((c) => c.id === s.id || (normalize(c.name) === normalize(s.name) && c.kind === s.kind));
-      const locked = !!match && used.has(match.id);
-      return {
-        ...s,
-        id: match?.id ?? s.id,
-        key: match?.id ?? s.id ?? `s${i}`,
-        color: DISTINCT[i % DISTINCT.length],
-        selected: locked,
-        locked,
-      };
-    });
-    // Categories the user created before (not in the suggestions) are shown too, selected.
-    for (const c of existing) {
-      if (result.some((r) => r.id === c.id)) continue;
-      result.push({ id: c.id, key: c.id, name: c.name, emoji: c.emoji, color: c.color, kind: c.kind, selected: true, locked: used.has(c.id) });
-    }
-    setItems(result);
-  }, [db, listId]);
+    setItems(await loadCategoryChoices(db, listId, replay));
+  }, [db, listId, replay]);
 
   useEffect(() => {
     load();
@@ -139,7 +113,8 @@ export default function OnboardingScreen() {
 
   const finish = async () => {
     await setSetting(db, SETTING_SHOW_INCOME, String(advanced));
-    await setSetting(db, SETTING_ONBOARDING_DONE, 'true');
+    // Repeating the welcome never touched the setting, so there is nothing to restore.
+    if (!replay) await setSetting(db, SETTING_ONBOARDING_DONE, 'true');
     // Back to the existing home if there is one (e.g. opened from Configuración), never a second copy.
     router.dismissTo('/');
   };
@@ -235,7 +210,7 @@ export default function OnboardingScreen() {
                 )}
                 <View style={styles.previewBars}>
                   {[0.9, 0.65, 0.45, 0.3].map((h, i) => (
-                    <View key={i} style={[styles.previewBar, { height: 110 * h, backgroundColor: DISTINCT[i] }]} />
+                    <View key={i} style={[styles.previewBar, { height: 110 * h, backgroundColor: PREVIEW_COLORS[i] }]} />
                   ))}
                 </View>
               </View>

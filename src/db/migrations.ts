@@ -135,17 +135,35 @@ const MIGRATIONS: ((db: SQLiteDatabase) => Promise<void>)[] = [
       PERSONAL_LIST_ID, 'Personal', '', now, now,
     );
   },
+
+  // v3: v2 never marked the onboarding as done, so whoever updated with data was treated as a new
+  // install. Anyone who already has transactions has seen the app: skip the welcome. This also
+  // repairs a 'false' left behind by "Ver la bienvenida otra vez" when it was closed halfway.
+  async (db) => {
+    await db.runAsync(
+      `INSERT INTO settings (key, value, updated_at)
+       SELECT 'onboarding_done', 'true', ? WHERE EXISTS (SELECT 1 FROM transactions)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+       WHERE settings.value <> 'true'`,
+      Date.now(),
+    );
+  },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;
 
-export async function migrateDatabase(db: SQLiteDatabase): Promise<void> {
+/**
+ * Brings the database up to `target` (the latest version by default). Tests pass an older target
+ * to build a database like the one an earlier release left on the phone.
+ */
+export async function migrateDatabase(db: SQLiteDatabase, target = MIGRATIONS.length): Promise<void> {
+  const last = Math.min(target, MIGRATIONS.length);
   await db.execAsync('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
 
   const row = await db.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
   let version = row?.user_version ?? 0;
 
-  while (version < MIGRATIONS.length) {
+  while (version < last) {
     const migration = MIGRATIONS[version];
     const next = version + 1;
     await db.withTransactionAsync(async () => {

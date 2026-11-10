@@ -16,6 +16,7 @@ import {
   type Transaction,
   TRANSACTION_SOURCES,
 } from '../db/types';
+import { enqueueWrite } from '../db/repo';
 import { notifyDataChanged } from './events';
 import { parseTags, serializeTags } from './tags';
 
@@ -167,7 +168,8 @@ export async function importBackupFromText(db: SQLiteDatabase, text: string): Pr
   const backup = parseBackup(text);
   const summary: ImportSummary = { categories: 0, transactions: 0, other: 0, skipped: 0 };
 
-  await db.withExclusiveTransactionAsync(async (txn) => {
+  // Queued with the rest of the writes: nothing else writes while the import holds its transaction.
+  await enqueueWrite(() => db.withExclusiveTransactionAsync(async (txn) => {
     const listIds = new Set((await txn.getAllAsync<{ id: string }>('SELECT id FROM lists')).map((r) => r.id));
 
     const upsert = async (
@@ -301,7 +303,7 @@ export async function importBackupFromText(db: SQLiteDatabase, text: string): Pr
         s.key, s.value, s.updated_at,
       );
     }
-  });
+  }));
 
   notifyDataChanged();
   return summary;

@@ -17,8 +17,14 @@ const SOURCE_LABEL: Record<string, string> = {
 // Excel in Colombia uses ";" as the list separator (the comma is the decimal mark).
 const SEP = ';';
 
-function cell(value: string | number): string {
-  const text = String(value);
+/**
+ * One CSV cell. Text that starts with = + - @ (or a tab / line break) would run as a formula when
+ * the file is opened in Excel or Sheets, so it gets a leading apostrophe: the spreadsheet shows
+ * it as plain text. Numbers are written as they are.
+ */
+export function cell(value: string | number): string {
+  const raw = String(value);
+  const text = typeof value === 'string' && /^[=+\-@\t\r\n]/.test(raw) ? `'${raw}` : raw;
   return /[";\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 

@@ -14,12 +14,19 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { migrateDatabase } from '../src/db/migrations';
 import { ToastHost } from '../src/components/ToastHost';
+import { useCheckpointOnBackground } from '../src/hooks/useCheckpointOnBackground';
 import { LockProvider } from '../src/security/LockProvider';
 import { colors } from '../src/theme';
 
 SplashScreen.preventAutoHideAsync();
 
 const DATABASE_NAME = 'finanzas.db';
+
+/** Lives inside SQLiteProvider only to reach the database. Renders nothing. */
+function DatabaseCare() {
+  useCheckpointOnBackground();
+  return null;
+}
 
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
@@ -43,6 +50,7 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <LockProvider onReady={onLockReady}>
         <SQLiteProvider databaseName={DATABASE_NAME} onInit={migrateDatabase}>
+          <DatabaseCare />
           <StatusBar style="dark" />
           <Stack
             screenOptions={{

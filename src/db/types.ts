@@ -61,6 +61,7 @@ export interface TransactionWithCategory extends Transaction {
 export interface TransactionAmount {
   kind: Kind;
   amount: number;
+  currency: string;
   occurred_at: number;
   category_id: string | null;
 }

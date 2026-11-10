@@ -10,8 +10,20 @@ export function onDataChanged(listener: Listener): () => void {
   };
 }
 
+let scheduled = false;
+
+/**
+ * Tells every mounted query to run again. Several calls in the same tick (a save that touches
+ * three tables, a toggle next to it) become one refresh instead of one per call.
+ */
 export function notifyDataChanged(): void {
-  listeners.forEach((listener) => listener());
+  if (scheduled) return;
+  scheduled = true;
+  queueMicrotask(() => {
+    scheduled = false;
+    // A copy, because a listener may unsubscribe while the others are being called.
+    [...listeners].forEach((listener) => listener());
+  });
 }
 
 // The category editor tells the screen that opened it which category was just created,

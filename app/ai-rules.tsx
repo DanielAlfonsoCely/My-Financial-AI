@@ -3,6 +3,7 @@ import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '../src/components/AppText';
+import { LoadError } from '../src/components/LoadError';
 import { ScreenHeader } from '../src/components/ScreenHeader';
 import { type AiRuleWithCategory, deleteAiRule, listAiRules } from '../src/db/repo';
 import { useCurrentList, useQuery } from '../src/hooks/useData';
@@ -13,7 +14,7 @@ export default function AiRulesScreen() {
   const db = useSQLiteContext();
   const insets = useSafeAreaInsets();
   const { listId } = useCurrentList();
-  const { data: rules } = useQuery(() => listAiRules(db, listId), [] as AiRuleWithCategory[], [db, listId]);
+  const { data: rules, error, reload } = useQuery(() => listAiRules(db, listId), [] as AiRuleWithCategory[], [db, listId]);
 
   const remove = (rule: AiRuleWithCategory) => {
     Alert.alert('Olvidar esta corrección', `"${rule.phrase}" ya no irá siempre a ${rule.category_name ?? 'esa categoría'}.`, [
@@ -29,7 +30,8 @@ export default function AiRulesScreen() {
         subtitle="Cada vez que corrijas una sugerencia automática de categoría, tu corrección será recordada para futuras clasificaciones."
       />
       <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 24, paddingTop: 8 }}>
-        {rules.length === 0 && (
+        {error && <LoadError onRetry={reload} />}
+        {rules.length === 0 && !error && (
           <AppText size={14} color={colors.textMuted} style={styles.empty}>
             Aún no hay correcciones. Cuando cambies la categoría que la app eligió, te preguntará si quieres recordarlo.
           </AppText>

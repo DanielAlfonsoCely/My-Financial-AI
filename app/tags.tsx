@@ -4,6 +4,7 @@ import { Alert, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '../src/components/AppText';
+import { LoadError } from '../src/components/LoadError';
 import { ScreenHeader } from '../src/components/ScreenHeader';
 import { createTag, deleteTag, listTags } from '../src/db/repo';
 import type { Tag } from '../src/db/types';
@@ -16,7 +17,7 @@ export default function TagsScreen() {
   const db = useSQLiteContext();
   const insets = useSafeAreaInsets();
   const { listId, list } = useCurrentList();
-  const { data: tags } = useQuery(() => listTags(db, listId), [] as Tag[], [db, listId]);
+  const { data: tags, error, reload } = useQuery(() => listTags(db, listId), [] as Tag[], [db, listId]);
   const [text, setText] = useState('');
 
   const add = async () => {
@@ -37,6 +38,7 @@ export default function TagsScreen() {
     <View style={[styles.screen, { paddingTop: insets.top + 8 }]}>
       <ScreenHeader title="Etiquetas" subtitle={`En tu lista actual "${listLabel(list)}"`} />
       <ScrollView contentContainerStyle={[styles.body, { paddingBottom: insets.bottom + 24 }]} keyboardShouldPersistTaps="handled">
+        {error && <LoadError onRetry={reload} />}
         <TextInput
           value={text ? `#${text}` : ''}
           onChangeText={(v) => setText(v.replace(/^#+/, '').replace(/\s+/g, ''))}
@@ -50,7 +52,7 @@ export default function TagsScreen() {
           style={styles.input}
         />
         <View style={styles.box}>
-          {tags.length === 0 ? (
+          {error ? null : tags.length === 0 ? (
             <AppText size={14} color={colors.textMuted}>
               Todavía no tienes etiquetas. Úsalas para marcar cómo pagaste (#efectivo, #nu) o lo que quieras.
             </AppText>
