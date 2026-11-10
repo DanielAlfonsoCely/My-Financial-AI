@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Cauce: registrar compra</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#1D1B26;text-decoration:none}a:hover{color:#5A43B5}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #F7F6FA; color: #1D1B26; font-family: 'Figtree', system-ui, sans-serif; position: relative; overflow: hidden; padding: 52px 20px 20px; display: flex; flex-direction: column; gap: 14px;">
+
+<div style="display: flex; align-items: center; gap: 8px; height: 44px"><div style="flex: 1 1 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); background: #EDEBF3; border-radius: 16px; padding: 3px; height: 44px; box-sizing: border-box"><button type="button" aria-pressed="true" style="border: 0; border-radius: 13px; background: #1D1B26; color: #FFFFFF; font-family: inherit; font-size: 13px; font-weight: 700">Compra</button><button type="button" style="border: 0; border-radius: 13px; background: transparent; color: #625E73; font-family: inherit; font-size: 13px; font-weight: 600">Venta</button></div><a href="Inversiones.dc.html" aria-label="Cerrar" style="width: 44px; height: 44px; border: 0; border-radius: 22px; background: #FFFFFF; color: #1D1B26; display: flex; align-items: center; justify-content: center; flex: none"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></a></div>
+<div style="background: #FFFFFF; border-radius: 24px; padding: 10px 14px; display: flex; align-items: center; gap: 12px; height: 66px; box-sizing: border-box">
+<div style="width: 44px; height: 44px; border-radius: 22px; background: #E4EFC7; display: flex; align-items: center; justify-content: center; flex: none; font-size: 11px; font-weight: 700; letter-spacing: 0.3px">VOO</div>
+<div style="flex: 1 1 0; display: flex; flex-direction: column; gap: 2px"><div style="font-size: 16px; font-weight: 700">Vanguard S&amp;P 500 ETF</div><div style="font-size: 13px; color: #625E73">NYSE Arca · USD</div></div>
+<button type="button" style="height: 44px; padding: 0 12px; border: 0; border-radius: 14px; background: #EDEBF3; color: #1D1B26; font-family: inherit; font-size: 13px; font-weight: 700">Cambiar</button>
+</div>
+<div style="background: #FFFFFF; border-radius: 24px; padding: 2px 16px; display: flex; flex-direction: column">
+<div style="display: flex; align-items: center; justify-content: space-between; height: 56px; gap: 12px">
+<label for="op-cantidad" style="font-size: 15px; color: #625E73; font-weight: 500">Cantidad</label>
+<input id="op-cantidad" type="text" inputmode="decimal" value="0,3512" style="width: 150px; height: 44px; border: 0; background: transparent; text-align: right; font-family: 'Bricolage Grotesque', system-ui, sans-serif; font-size: 20px; font-weight: 700; color: #1D1B26; font-variant-numeric: tabular-nums; padding: 0">
+</div><div style="height: 1px; background: #EDEBF3"></div>
+<div style="display: flex; align-items: center; justify-content: space-between; height: 56px; gap: 12px">
+<label for="op-precio" style="font-size: 15px; color: #625E73; font-weight: 500">Precio por unidad · US$</label>
+<input id="op-precio" type="text" inputmode="decimal" value="598,20" style="width: 120px; height: 44px; border: 0; background: transparent; text-align: right; font-family: 'Bricolage Grotesque', system-ui, sans-serif; font-size: 20px; font-weight: 700; color: #1D1B26; font-variant-numeric: tabular-nums; padding: 0">
+</div><div style="height: 1px; background: #EDEBF3"></div>
+<div style="display: flex; align-items: center; justify-content: space-between; height: 56px; gap: 12px">
+<label for="op-comision" style="font-size: 15px; color: #625E73; font-weight: 500">Comisión · US$</label>
+<input id="op-comision" type="text" inputmode="decimal" value="0,00" style="width: 120px; height: 44px; border: 0; background: transparent; text-align: right; font-family: 'Bricolage Grotesque', system-ui, sans-serif; font-size: 20px; font-weight: 700; color: #1D1B26; font-variant-numeric: tabular-nums; padding: 0">
+</div><div style="height: 1px; background: #EDEBF3"></div>
+<div style="display: flex; align-items: center; justify-content: space-between; height: 56px; gap: 12px">
+<div style="font-size: 15px; color: #625E73; font-weight: 500">Día y hora de la orden</div>
+<button type="button" style="height: 44px; padding: 0 12px; border: 0; border-radius: 14px; background: #EDEBF3; color: #1D1B26; font-family: inherit; font-size: 14px; font-weight: 700">14 oct, 10:32 a. m.</button>
+</div>
+<div style="height: 1px; background: #EDEBF3"></div>
+<div style="display: flex; align-items: center; justify-content: space-between; height: 56px; gap: 12px">
+<div style="font-size: 15px; color: #625E73; font-weight: 500">Se paga desde</div>
+<button type="button" style="height: 44px; padding: 0 12px; border: 0; border-radius: 14px; background: #EDEBF3; color: #1D1B26; font-family: inherit; font-size: 14px; font-weight: 700">XTB · saldo libre</button>
+</div>
+</div>
+<div style="background: {{accentSoft}}; border-radius: 24px; padding: 18px; display: flex; align-items: center; justify-content: space-between">
+<div style="display: flex; flex-direction: column; gap: 2px"><div style="font-size: 13px; color: #625E73; font-weight: 600">Total de la compra</div><div style="font-size: 13px; color: #625E73; font-variant-numeric: tabular-nums">≈ $861.369 COP</div></div>
+<div style="font-family: 'Bricolage Grotesque', system-ui, sans-serif; font-size: 30px; font-weight: 700; letter-spacing: -1px; font-variant-numeric: tabular-nums">US$210,09</div>
+</div>
+<button type="button" style="min-height: 64px; border: 1.5px dashed #8E8A9C; border-radius: 24px; background: transparent; color: #1D1B26; font-family: inherit; display: flex; align-items: center; gap: 12px; padding: 8px 14px; text-align: left">
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M8 11l4 4 4-4M5 15v3a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3"></path></svg>
+<div style="display: flex; flex-direction: column; gap: 2px"><div style="font-size: 15px; font-weight: 700">¿Muchas operaciones?</div><div style="font-size: 13px; color: #625E73">Importa el reporte de XTB y se llenan solas</div></div>
+</button>
+<a href="Inversiones.dc.html" style="height: 56px; border-radius: 18px; background: {{accent}}; color: #1D1B26; font-size: 17px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 8px; flex: none; margin-top: auto"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>Guardar compra</a>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"acento":{"editor":"enum","options":["Lila","Azul"],"default":"Lila"},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+renderVals() {
+var azul = (this.props.acento ?? 'Lila') === 'Azul';
+return {
+accent: azul ? '#B8D3FA' : '#CFC0F8',
+accentSoft: azul ? '#E5EFFE' : '#EEE8FD',
+accentDeep: azul ? '#2B5BAA' : '#5A43B5'
+};
+}
+}
+</script>
+</body>
+</html>
