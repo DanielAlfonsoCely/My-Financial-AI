@@ -8,7 +8,7 @@ y presupuestos, listas, etiquetas, recurrentes, búsqueda, voz, chat, Mejoras de
 (A) cambiar la piel para que deje de parecer MonAi, (B) corregir lo de la auditoría, (C) volver real el panel de
 cuentas con grupos y transferencias, (D) inversiones, más (E) un botón temporal de datos de prueba que crece con cada
 bloque. Una rama y un PR por bloque. **Orden real: B → A → C → D** (B se hizo primero, el 10 nov, porque
-arreglaba datos; la letra de cada sección no cambia).
+arreglaba datos, y C después a pedido de Daniel; queda A y luego D. La letra de cada sección no cambia).
 
 Convenciones del repo que siguen valiendo: migraciones solo agregando (nunca editar v1/v2), enteros para plata,
 UUID + `created_at/updated_at/deleted_at`, `notifyDataChanged()` tras escribir, nada nativo fuera de Expo Go sin avisar,
@@ -127,7 +127,13 @@ espacio del teclado, voz con clave real, MIME `audio/m4a` en la Interactions API
 
 ---
 
-## C. Cuentas y transferencias (hoy `AccountsPanel.tsx` es maqueta con `lib/mockAccounts.ts`)
+## C. Cuentas y transferencias ✅ (hecho el 10 nov 2026, rama `bloque-c-cuentas`)
+
+Hecho con la piel actual (el bloque A todavía no existe). Diferencias frente a lo escrito abajo, con su razón en
+`docs/estado.md`: "Cuadrar saldo" ajusta el saldo inicial en vez de crear un movimiento de ajuste; tocar una cuenta
+abre su detalle con sus últimos movimientos en vez de filtrar el inicio; el saldo resultante solo se muestra en
+transferencias; la cuenta `broker` muestra su efectivo hasta que exista el bloque D; y las cuentas en otra moneda se
+muestran pero no entran en "Tu dinero hoy" (falta la TRM, bloque D).
 
 Partir de la maqueta (columnas, tarjeta con cupo punteado, filas) y volverla real, con grupos, vista general/agrupada
 y activos/pasivos separados (detalle más abajo):

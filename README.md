@@ -37,7 +37,9 @@ APK propio con un *development build* (`eas build --profile development --platfo
 - **Seguridad:** PIN de 4 dígitos, huella, tiempo de bloqueo, y con PIN activo la app se tapa en las apps
   recientes y bloquea capturas (se puede apagar en Seguridad).
 - **Respaldo:** exportar a JSON e importar sin duplicar (gana la versión más reciente de cada fila), y exportar CSV.
-- **Panel de cuentas:** por ahora es una maqueta con datos de ejemplo.
+- **Cuentas:** efectivo, bancos, tarjetas e inversiones, con grupos, vista general o agrupada, activos y pasivos.
+  Pasar plata entre cuentas es una transferencia: una sola fila que no cuenta como gasto ni ingreso.
+- **Datos de prueba** (solo en desarrollo): Configuración → Desarrollo pobla la app con datos inventados y los quita.
 
 ## Estructura
 
@@ -63,6 +65,7 @@ src/
 - `source` y `source_ref` en cada movimiento, para la de-duplicación de notificaciones y SMS.
 - Migraciones versionadas con `PRAGMA user_version` (`src/db/migrations.ts`). Para cambiar el esquema se agrega
   una migración nueva; nunca se edita una existente.
+- Los saldos de las cuentas no se guardan: se calculan del saldo inicial y los movimientos.
 - Todas las escrituras pasan por una sola cola (`repo.ts`), y las que tocan varias tablas son atómicas.
 
 ## Scripts
@@ -87,8 +90,8 @@ El plan detallado y el estado están en `.claude/docs/plan.md` y `.claude/docs/e
 | Fase 1 | Base, SQLite, inicio, entrada manual, respaldo JSON | Hecho |
 | Fases 2 y 4 | Voz e IA, chat, presupuestos, categorías, etiquetas, recurrentes, listas | Hecho |
 | B | Auditoría: correcciones de datos, seguridad y pruebas | Hecho |
+| C | Cuentas reales con grupos y transferencias | Hecho |
 | A | Identidad visual propia | Siguiente |
-| C | Cuentas reales con grupos y transferencias | Diseñado |
 | D | Inversiones (XTB) | Diseñado |
 | Fase 3 | Notificaciones y SMS con de-duplicación | Futuro |
 | Fase 5 | Widget, OCR de recibos | Futuro |

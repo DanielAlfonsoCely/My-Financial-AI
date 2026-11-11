@@ -127,6 +127,8 @@ export function usePeriodData(listId: string, range: [number, number] | null, wi
       // Totals are in one currency. A movement in another one stays in the list but is never
       // added to pesos (investments in USD will live in their own tables).
       if (t.currency !== DEFAULT_CURRENCY) continue;
+      // A transfer between own accounts is neither an expense nor an income.
+      if (t.kind === 'transfer') continue;
       if (t.kind === 'income') incomeTotal += t.amount;
       else expenseTotal += t.amount;
 
@@ -181,7 +183,7 @@ export function sumRange(rows: TransactionAmount[], start: number, end: number) 
     if (r.occurred_at < start || r.occurred_at >= end) continue;
     if (r.currency !== DEFAULT_CURRENCY) continue;
     if (r.kind === 'income') income += r.amount;
-    else expense += r.amount;
+    else if (r.kind === 'expense') expense += r.amount;
   }
   return { expense, income, balance: income - expense };
 }

@@ -5,6 +5,7 @@ import { migrateDatabase, SCHEMA_VERSION } from '../migrations';
 import { DEFAULT_CATEGORIES, PERSONAL_LIST_ID } from '../seed';
 
 const T0 = 1_750_000_000_000;
+const LATEST = 4;
 
 async function onboardingDone(db: SQLiteDatabase): Promise<string | null> {
   const row = await db.getFirstAsync<{ value: string }>("SELECT value FROM settings WHERE key = 'onboarding_done'");
@@ -70,17 +71,29 @@ async function snapshot(db: SQLiteDatabase, tables: string[]): Promise<Record<st
   return result;
 }
 
+/** `after` cut down to the columns `before` had: a later migration may add columns, never change the old ones. */
+function sameColumns(after: Record<string, unknown[]>, before: Record<string, unknown[]>): Record<string, unknown[]> {
+  const result: Record<string, unknown[]> = {};
+  for (const table of Object.keys(before)) {
+    result[table] = after[table].map((row, i) => {
+      const keys = Object.keys((before[table][i] ?? row) as object);
+      return Object.fromEntries(keys.map((k) => [k, (row as Record<string, unknown>)[k]]));
+    });
+  }
+  return result;
+}
+
 const V2_TABLES = ['lists', 'categories', 'transactions', 'tags', 'recurring', 'budgets', 'ai_rules'];
 
 describe('migraciones', () => {
-  test('la versión actual es la 3', () => {
-    expect(SCHEMA_VERSION).toBe(3);
+  test('la versión actual es la 4', () => {
+    expect(SCHEMA_VERSION).toBe(LATEST);
   });
 
-  test('instalación limpia: llega a v3, con categorías y lista Personal, y sigue viendo la bienvenida', async () => {
+  test('instalación limpia: llega a la última versión, con categorías y lista Personal, y sigue viendo la bienvenida', async () => {
     const db = openTestDatabase();
     await migrateDatabase(db);
-    expect(await userVersion(db)).toBe(3);
+    expect(await userVersion(db)).toBe(LATEST);
     expect(await count(db, 'categories')).toBe(DEFAULT_CATEGORIES.length);
     expect(await count(db, 'lists')).toBe(1);
     expect(await onboardingDone(db)).toBeNull();
@@ -98,7 +111,7 @@ describe('migraciones', () => {
 
     await migrateDatabase(db);
 
-    expect(await userVersion(db)).toBe(3);
+    expect(await userVersion(db)).toBe(LATEST);
     expect(await onboardingDone(db)).toBe('true');
     expect(
       await db.getAllAsync('SELECT id, kind, amount, category_id, title, occurred_at, deleted_at FROM transactions ORDER BY id'),
@@ -121,7 +134,7 @@ describe('migraciones', () => {
     const db = openTestDatabase();
     await migrateDatabase(db, 1);
     await migrateDatabase(db);
-    expect(await userVersion(db)).toBe(3);
+    expect(await userVersion(db)).toBe(LATEST);
     expect(await onboardingDone(db)).toBeNull();
   });
 
@@ -144,9 +157,9 @@ describe('migraciones', () => {
 
       await migrateDatabase(db);
 
-      expect(await userVersion(db)).toBe(3);
+      expect(await userVersion(db)).toBe(LATEST);
       expect(await onboardingDone(db)).toBe('true');
-      expect(await snapshot(db, V2_TABLES)).toEqual(before);
+      expect(sameColumns(await snapshot(db, V2_TABLES), before)).toEqual(before);
       const threshold = await db.getFirstAsync<{ value: string }>("SELECT value FROM settings WHERE key = 'budget_threshold'");
       expect(threshold?.value).toBe('80');
       if (initial === 'true') {
@@ -178,10 +191,10 @@ describe('migraciones', () => {
     await migrateDatabase(db, 2);
     await fillV2(db);
     await migrateDatabase(db);
-    const before = await snapshot(db, [...V2_TABLES, 'settings']);
+    const before = await snapshot(db, [...V2_TABLES, 'settings', 'accounts', 'account_groups']);
     await migrateDatabase(db);
-    expect(await userVersion(db)).toBe(3);
-    expect(await snapshot(db, [...V2_TABLES, 'settings'])).toEqual(before);
+    expect(await userVersion(db)).toBe(LATEST);
+    expect(await snapshot(db, [...V2_TABLES, 'settings', 'accounts', 'account_groups'])).toEqual(before);
   });
 
   test('si una migración falla, la versión y los datos quedan como estaban', async () => {
@@ -195,5 +208,93 @@ describe('migraciones', () => {
     expect(await count(db, 'transactions')).toBe(4);
     const lists = await db.getFirstAsync("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'lists'");
     expect(lists).toBeNull();
+  });
+  describe('v4: cuentas y transferencias', () => {
+    test('desde v3 con datos: los movimientos quedan iguales y "sin cuenta"', async () => {
+      const db = openTestDatabase();
+      await migrateDatabase(db, 2);
+      await fillV2(db);
+      await migrateDatabase(db, 3);
+      expect(await userVersion(db)).toBe(3);
+      const before = await snapshot(db, [...V2_TABLES, 'settings']);
+
+      await migrateDatabase(db);
+
+      expect(await userVersion(db)).toBe(4);
+      expect(sameColumns(await snapshot(db, [...V2_TABLES, 'settings']), before)).toEqual(before);
+      expect(await count(db, 'transactions', 'account_id IS NULL AND to_account_id IS NULL AND to_amount IS NULL')).toBe(3);
+      expect(await count(db, 'recurring', 'account_id IS NULL')).toBe(1);
+      expect(await count(db, 'accounts')).toBe(0);
+    });
+
+    test('desde v1 con datos: llega a v4 sin perder nada', async () => {
+      const db = openTestDatabase();
+      await migrateDatabase(db, 1);
+      await fillV1(db);
+      await migrateDatabase(db);
+      expect(await count(db, 'transactions')).toBe(4);
+      expect(await count(db, 'transactions', 'deleted_at IS NOT NULL')).toBe(1);
+      const sum = await db.getFirstAsync<{ total: number }>('SELECT SUM(amount) AS total FROM transactions');
+      expect(sum?.total).toBe(25000 + 12500 + 3_200_000 + 9000);
+    });
+
+    test('crea el grupo fijo Inversiones y los índices de movimientos', async () => {
+      const db = openTestDatabase();
+      await migrateDatabase(db);
+      const group = await db.getFirstAsync<{ id: string; system_key: string }>('SELECT id, system_key FROM account_groups');
+      expect(group).toEqual({ id: 'group-investments', system_key: 'investments' });
+      const indexes = await db.getAllAsync<{ name: string }>(
+        "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'transactions' AND name LIKE 'idx_%' ORDER BY name",
+      );
+      expect(indexes.map((i) => i.name)).toEqual([
+        'idx_transactions_account',
+        'idx_transactions_list',
+        'idx_transactions_occurred_at',
+        'idx_transactions_source_ref',
+        'idx_transactions_to_account',
+      ]);
+      expect(await db.getFirstAsync("SELECT 1 FROM sqlite_master WHERE name = 'transactions_v4'")).toBeNull();
+    });
+
+    test('una categoría que ya no existe no detiene la actualización: el movimiento queda sin categoría', async () => {
+      const db = openTestDatabase();
+      await migrateDatabase(db, 3);
+      await db.execAsync('PRAGMA foreign_keys = OFF');
+      await db.runAsync(
+        `INSERT INTO transactions (id, list_id, kind, amount, currency, category_id, title, occurred_at, created_at, updated_at)
+         VALUES ('huerfano', ?, 'expense', 5000, 'COP', 'cat-fantasma', 'Algo', ?, ?, ?)`,
+        PERSONAL_LIST_ID, T0, T0, T0,
+      );
+      await db.execAsync('PRAGMA foreign_keys = ON');
+
+      await migrateDatabase(db);
+
+      const row = await db.getFirstAsync<{ amount: number; category_id: string | null }>("SELECT amount, category_id FROM transactions WHERE id = 'huerfano'");
+      expect(row).toEqual({ amount: 5000, category_id: null });
+    });
+
+    test('las reglas de una transferencia las hace cumplir la base', async () => {
+      const db = openTestDatabase();
+      await migrateDatabase(db);
+      for (const id of ['a1', 'a2']) {
+        await db.runAsync("INSERT INTO accounts (id, name, color, type, created_at, updated_at) VALUES (?, ?, '#fff', 'savings', ?, ?)", id, id, T0, T0);
+      }
+      const insert = (id: string, kind: string, account: string | null, to: string | null, category: string | null = null) =>
+        db.runAsync(
+          `INSERT INTO transactions (id, kind, amount, currency, category_id, account_id, to_account_id, occurred_at, created_at, updated_at)
+           VALUES (?, ?, 1000, 'COP', ?, ?, ?, ?, ?, ?)`,
+          id, kind, category, account, to, T0, T0, T0,
+        );
+
+      await insert('ok', 'transfer', 'a1', 'a2');
+      await insert('gasto', 'expense', 'a1', null, 'cat-mercado');
+      await expect(insert('sin-destino', 'transfer', 'a1', null)).rejects.toThrow();
+      await expect(insert('sin-origen', 'transfer', null, 'a2')).rejects.toThrow();
+      await expect(insert('misma', 'transfer', 'a1', 'a1')).rejects.toThrow();
+      await expect(insert('gasto-con-destino', 'expense', 'a1', 'a2')).rejects.toThrow();
+      await expect(insert('con-categoria', 'transfer', 'a1', 'a2', 'cat-mercado')).rejects.toThrow();
+      await expect(insert('cuenta-fantasma', 'expense', 'no-existe', null)).rejects.toThrow();
+      expect(await count(db, 'transactions')).toBe(2);
+    });
   });
 });
