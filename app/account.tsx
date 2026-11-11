@@ -220,18 +220,26 @@ export default function AccountScreen() {
         {account && (
           <View style={styles.card}>
             <AppText size={13} color={colors.textMuted}>
-              {isCredit ? 'Debes hoy' : 'Saldo hoy'}
+              {isCredit ? 'Debes hoy' : type === 'broker' ? 'Saldo libre (sin las posiciones)' : 'Saldo hoy'}
             </AppText>
             <AppText weight="extrabold" size={34}>
               {account.balance < 0 ? '−' : ''}
               {formatMoney(account.balance, account.currency)}
               {account.currency !== DEFAULT_CURRENCY ? ` ${account.currency}` : ''}
             </AppText>
+            {type === 'broker' && editingId && (
+              <Pressable style={styles.linkButton} onPress={() => router.push({ pathname: '/investments', params: { accountId: editingId } })}>
+                <Feather name="trending-up" size={15} color={colors.text} />
+                <AppText weight="bold" size={14}>
+                  Ver inversiones
+                </AppText>
+              </Pressable>
+            )}
             {realDigits === null ? (
               <Pressable style={styles.linkButton} onPress={() => setRealDigits('')}>
                 <Feather name="check-circle" size={15} color={colors.text} />
                 <AppText weight="bold" size={14}>
-                  {investment ? 'Actualizar valor' : 'Cuadrar saldo'}
+                  {type === 'asset' ? 'Actualizar valor' : 'Cuadrar saldo'}
                 </AppText>
               </Pressable>
             ) : (

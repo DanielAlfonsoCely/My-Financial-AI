@@ -7,9 +7,11 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { getSetting, listAccountGroups, listAccounts, setSetting, SETTING_ACCOUNTS_VIEW } from '../../db/repo';
-import type { AccountGroup, AccountWithBalance } from '../../db/types';
+import { listValuedAccounts, type ValuedAccount } from '../../db/investments';
+import { getSetting, listAccountGroups, setSetting, SETTING_ACCOUNTS_VIEW } from '../../db/repo';
+import type { AccountGroup } from '../../db/types';
 import { useQuery } from '../../hooks/useData';
+import { usePriceRefresh } from '../../hooks/usePriceRefresh';
 import {
   ACCOUNT_TYPE_LABEL,
   creditUsage,
@@ -20,6 +22,7 @@ import {
   summarizeAccounts,
 } from '../../lib/accounts';
 import { DEFAULT_CURRENCY, formatAmount, formatCompact, formatMoney } from '../../lib/money';
+import { formatPercent } from '../../lib/portfolio';
 import { categoryPalette, colors, radius } from '../../theme';
 import { AppText } from '../AppText';
 import { IconButton } from '../IconButton';
@@ -32,44 +35,64 @@ const BAR_WIDTH = 86;
 
 type ViewMode = 'general' | 'grouped';
 
-const openAccount = (id: string) => router.push({ pathname: '/account', params: { id } });
+/** A broker account opens its portfolio; the rest open their detail. */
+const openAccount = (a: { id: string; type: string }) =>
+  a.type === 'broker' ? router.push({ pathname: '/investments', params: { accountId: a.id } }) : router.push({ pathname: '/account', params: { id: a.id } });
 const newAccount = (params: { groupId?: string; type?: string } = {}) => router.push({ pathname: '/account', params });
 
 /** One pastel per group, by its position, so the grouped chart is as readable as the general one. */
 const GROUP_COLORS = [4, 6, 5, 2, 1, 9, 11, 12, 0, 3].map((i) => categoryPalette[i]);
 const INVESTMENTS_COLOR = categoryPalette[13];
-const groupColor = (section: GroupSection, index: number) =>
+const groupColor = (section: GroupSection<ValuedAccount>, index: number) =>
   section.system ? INVESTMENTS_COLOR : section.id === null ? colors.chip : GROUP_COLORS[index % GROUP_COLORS.length];
 
 const barHeight = (value: number, scale: number) =>
   MIN_HEIGHT + (MAX_HEIGHT - MIN_HEIGHT) * Math.min(1, Math.max(0, value) / Math.max(scale, 1));
 
-/** Balance in the account's own currency; pesos are the default and need no code. */
-function money(account: AccountWithBalance): string {
-  const text = formatMoney(account.balance, account.currency);
-  const signed = account.balance < 0 ? `−${text}` : text;
-  return account.currency === DEFAULT_CURRENCY ? signed : `${signed} ${account.currency}`;
+/** Balance in the account's own currency ("US$412,36"); pesos need no code. */
+function ownMoney(account: ValuedAccount): string {
+  const symbol = account.currency === 'USD' ? 'US$' : account.currency === DEFAULT_CURRENCY ? '$' : `${account.currency} `;
+  return `${account.balance < 0 ? '−' : ''}${symbol}${formatAmount(account.balance, account.currency)}`;
 }
+
+/** What the row shows on the right: pesos when they can be told, otherwise the account's own currency. */
+function money(account: ValuedAccount): string {
+  if (account.base_balance === null) return ownMoney(account);
+  return `${account.base_balance < 0 ? '−' : ''}${formatMoney(account.base_balance)}`;
+}
+
+/** For an account in another currency: its own amount and, for a broker, today's change. */
+function foreignCaption(account: ValuedAccount): string | null {
+  if (account.currency === DEFAULT_CURRENCY) return null;
+  const previous = account.holdings_value - (account.day_change ?? 0);
+  const today = account.day_change !== null && previous > 0 ? ` · hoy ${formatPercent(account.day_change / previous)}` : '';
+  return `${ownMoney(account)}${today}`;
+}
+
+const worth = (account: ValuedAccount) => account.base_balance ?? 0;
 
 export function AccountsPanel({ width }: { width: number }) {
   const db = useSQLiteContext();
   const insets = useSafeAreaInsets();
   const { data, loaded, error, reload } = useQuery(
     async () => {
-      const [accounts, groups, view] = await Promise.all([listAccounts(db), listAccountGroups(db), getSetting(db, SETTING_ACCOUNTS_VIEW)]);
+      const [accounts, groups, view] = await Promise.all([listValuedAccounts(db), listAccountGroups(db), getSetting(db, SETTING_ACCOUNTS_VIEW)]);
       return { accounts, groups, view: (view === 'grouped' ? 'grouped' : 'general') as ViewMode };
     },
-    { accounts: [] as AccountWithBalance[], groups: [] as AccountGroup[], view: 'general' as ViewMode },
+    { accounts: [] as ValuedAccount[], groups: [] as AccountGroup[], view: 'general' as ViewMode },
     [db],
   );
   const { accounts, groups, view } = data;
 
+  // Prices and the exchange rate are refreshed here too, so the panel is right without opening Inversiones.
+  usePriceRefresh();
   const summary = summarizeAccounts(accounts);
-  const inPesos = (a: AccountWithBalance) => a.currency === DEFAULT_CURRENCY;
+  const inPesos = (a: ValuedAccount) => a.base_balance !== null;
   // Biggest first, like the category bars of the home screen.
-  const assets = accounts.filter((a) => !isLiability(a)).sort((a, b) => Number(inPesos(b)) - Number(inPesos(a)) || b.balance - a.balance);
+  const assets = accounts.filter((a) => !isLiability(a)).sort((a, b) => Number(inPesos(b)) - Number(inPesos(a)) || worth(b) - worth(a));
   const liabilities = accounts.filter(isLiability).sort((a, b) => b.balance - a.balance);
   const sections = groupAccounts(accounts, groups);
+  const rate = accounts.find((a) => a.fx)?.fx ?? null;
   const sectionColor = new Map(sections.map((s, i) => [s.id, groupColor(s, i)]));
   const groupName = new Map(groups.map((g) => [g.id, g.name]));
 
@@ -109,7 +132,7 @@ export function AccountsPanel({ width }: { width: number }) {
   }
 
   const columnScale = view === 'general'
-    ? Math.max(...assets.filter(inPesos).map((a) => a.balance), ...liabilities.map((a) => a.credit_limit ?? a.balance), 1)
+    ? Math.max(...assets.filter(inPesos).map(worth), ...liabilities.map((a) => a.credit_limit ?? a.balance), 1)
     : Math.max(...sections.map((s) => s.total), summary.debt, liabilities.reduce((s, a) => s + (a.credit_limit ?? 0), 0), 1);
 
   return (
@@ -148,7 +171,13 @@ export function AccountsPanel({ width }: { width: number }) {
         </View>
         {summary.foreign.length > 0 && (
           <AppText size={12} color={colors.textMuted} style={styles.note}>
-            Sin contar {summary.foreign.map((a) => a.name).join(', ')}: {summary.foreign.length === 1 ? 'está' : 'están'} en otra moneda.
+            Sin contar {summary.foreign.map((a) => a.name).join(', ')}: {summary.foreign.length === 1 ? 'está' : 'están'} en otra moneda
+            y todavía no hay tasa de cambio (llega al tener una posición y conexión).
+          </AppText>
+        )}
+        {rate && (
+          <AppText size={12} color={colors.textMuted} style={styles.note}>
+            Dólares a TRM {formatMoney(Math.round(rate.rate_e4 / 10_000))} ({rate.day}).
           </AppText>
         )}
 
@@ -272,15 +301,15 @@ function Column({ emoji, value, detail, name, color, height, onPress }: { emoji:
   );
 }
 
-function AccountColumn({ account: a, scale }: { account: AccountWithBalance; scale: number }) {
+function AccountColumn({ account: a, scale }: { account: ValuedAccount; scale: number }) {
   const usage = creditUsage(a);
   if (usage === null || !a.credit_limit) {
-    return <Column emoji={a.emoji} value={a.balance} name={a.name} color={a.color} height={barHeight(a.balance, scale)} onPress={() => openAccount(a.id)} />;
+    return <Column emoji={a.emoji} value={worth(a)} name={a.name} color={a.color} height={barHeight(worth(a), scale)} onPress={() => openAccount(a)} />;
   }
   // Credit card: the dashed outline is the limit and the fill is what is owed,
   // the same language the budgets use.
   return (
-    <Pressable style={styles.column} onPress={() => openAccount(a.id)}>
+    <Pressable style={styles.column} onPress={() => openAccount(a)}>
       <View style={[styles.outline, { height: barHeight(a.credit_limit, scale) }]}>
         <View style={[styles.bar, styles.creditFill, { height: Math.min(barHeight(a.balance, scale), barHeight(a.credit_limit, scale)), backgroundColor: a.color }]}>
           <AppText size={24}>{a.emoji}</AppText>
@@ -300,7 +329,7 @@ function AccountColumn({ account: a, scale }: { account: AccountWithBalance; sca
 }
 
 /** Grouped view: every liability in one column, the dashed outline being the sum of the limits. */
-function LiabilitiesColumn({ accounts, debt, scale }: { accounts: AccountWithBalance[]; debt: number; scale: number }) {
+function LiabilitiesColumn({ accounts, debt, scale }: { accounts: ValuedAccount[]; debt: number; scale: number }) {
   const limit = accounts.reduce((s, a) => s + (a.credit_limit ?? 0), 0);
   const outline = barHeight(Math.max(limit, debt), scale);
   return (
@@ -320,7 +349,7 @@ function LiabilitiesColumn({ accounts, debt, scale }: { accounts: AccountWithBal
   );
 }
 
-function GroupBlock({ section: s, color }: { section: GroupSection; color: string }) {
+function GroupBlock({ section: s, color }: { section: GroupSection<ValuedAccount>; color: string }) {
   const editable = s.id !== null && !s.system;
   return (
     <View>
@@ -365,11 +394,12 @@ function GroupBlock({ section: s, color }: { section: GroupSection; color: strin
   );
 }
 
-function AccountRow({ account: a, caption, chip }: { account: AccountWithBalance; caption: string; chip?: string }) {
+function AccountRow({ account: a, caption, chip }: { account: ValuedAccount; caption: string; chip?: string }) {
   const usage = creditUsage(a);
   const debt = isLiability(a);
+  const foreign = a.base_balance !== null ? foreignCaption(a) : null;
   return (
-    <Pressable style={({ pressed }) => [styles.row, pressed && styles.pressed]} onPress={() => openAccount(a.id)} accessibilityRole="button">
+    <Pressable style={({ pressed }) => [styles.row, pressed && styles.pressed]} onPress={() => openAccount(a)} accessibilityRole="button">
       <View style={[styles.bubble, { backgroundColor: a.color }]}>
         <AppText size={20}>{a.emoji}</AppText>
       </View>
@@ -387,7 +417,7 @@ function AccountRow({ account: a, caption, chip }: { account: AccountWithBalance
           )}
         </View>
         <AppText size={12} color={colors.textMuted} numberOfLines={1}>
-          {caption}
+          {foreign ? `${foreign} · ${caption}` : caption}
         </AppText>
         {usage !== null && a.credit_limit && (
           <>

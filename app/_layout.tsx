@@ -70,6 +70,9 @@ export default function RootLayout() {
             <Stack.Screen name="list-edit" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
             <Stack.Screen name="account" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
             <Stack.Screen name="account-group" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+            <Stack.Screen name="trade" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+            <Stack.Screen name="investments" />
+            <Stack.Screen name="prices" />
             <Stack.Screen name="security" />
             <Stack.Screen name="categories" />
             <Stack.Screen name="budgets" />

@@ -66,7 +66,7 @@ export function summarizeAccounts(accounts: AccountWithBalance[], currency = DEF
   return { available, invested, debt, assets, net: assets - debt, foreign };
 }
 
-export interface GroupSection {
+export interface GroupSection<T extends AccountWithBalance = AccountWithBalance> {
   /** null = accounts without a group. */
   id: string | null;
   name: string;
@@ -77,7 +77,7 @@ export interface GroupSection {
   total: number;
   /** Part of all the assets, 0–1. */
   share: number;
-  accounts: AccountWithBalance[];
+  accounts: T[];
 }
 
 /**
@@ -85,12 +85,12 @@ export interface GroupSection {
  * (so there is somewhere to add the first account); "Sin grupo" only when it has accounts.
  * Liabilities are not here: they have their own section.
  */
-export function groupAccounts(accounts: AccountWithBalance[], groups: AccountGroup[], currency = DEFAULT_CURRENCY): GroupSection[] {
+export function groupAccounts<T extends AccountWithBalance>(accounts: T[], groups: AccountGroup[], currency = DEFAULT_CURRENCY): GroupSection<T>[] {
   const assets = accounts.filter((a) => !isLiability(a));
-  const sum = (list: AccountWithBalance[]) => list.reduce((s, a) => s + (baseValue(a, currency) ?? 0), 0);
+  const sum = (list: T[]) => list.reduce((s, a) => s + (baseValue(a, currency) ?? 0), 0);
   const all = sum(assets);
   const known = new Set(groups.map((g) => g.id));
-  const section = (id: string | null, name: string, emoji: string, system: boolean, list: AccountWithBalance[]): GroupSection => {
+  const section = (id: string | null, name: string, emoji: string, system: boolean, list: T[]): GroupSection<T> => {
     const total = sum(list);
     return { id, name, emoji, system, total, share: all > 0 ? Math.max(0, total) / all : 0, accounts: list };
   };

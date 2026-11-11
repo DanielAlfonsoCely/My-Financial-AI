@@ -188,3 +188,45 @@ export function convertMinor(amountMinor: number, rateE4: number, from: string, 
   const half = divisor / BigInt(2);
   return Number(product >= 0 ? (product + half) / divisor : -((-product + half) / divisor));
 }
+
+export interface PricePoint {
+  t: number;
+  price_e4: number;
+}
+
+/**
+ * Turns the price points of each instrument (sorted by time) into "last known price at or before t".
+ * `fallback` is asked when the first source has nothing that early (the day's chart starts at the
+ * open; before that the previous daily close is the right price).
+ */
+export function priceLookup(
+  series: Map<string, PricePoint[]>,
+  fallback?: (instrumentId: string, t: number) => number | null,
+): (instrumentId: string, t: number) => number | null {
+  return (instrumentId, t) => {
+    const points = series.get(instrumentId);
+    if (points && points.length > 0 && points[0].t <= t) {
+      let low = 0;
+      let high = points.length - 1;
+      while (low < high) {
+        const mid = (low + high + 1) >> 1;
+        if (points[mid].t <= t) low = mid;
+        else high = mid - 1;
+      }
+      return points[low].price_e4;
+    }
+    return fallback ? fallback(instrumentId, t) : null;
+  };
+}
+
+/** A daily close counts from the end of its day (UTC), so a trade made that day is already in. */
+export function dayToTime(day: string): number {
+  return Date.parse(`${day}T23:59:59Z`);
+}
+
+/** Every distinct moment of the given series, in order, from `from` on. */
+export function timeline(series: Iterable<PricePoint[]>, from = 0): number[] {
+  const times = new Set<number>();
+  for (const points of series) for (const p of points) if (p.t >= from) times.add(p.t);
+  return [...times].sort((a, b) => a - b);
+}
