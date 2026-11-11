@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Cauce: calendario propio</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#1D1B26;text-decoration:none}a:hover{color:#5A43B5}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #5E5B6B; color: #1D1B26; font-family: 'Figtree', system-ui, sans-serif; position: relative; overflow: hidden; padding: 0; display: flex; flex-direction: column; justify-content: flex-end;">
+
+<div style="background: #FFFFFF; border-radius: 30px 30px 0 0; padding: 10px 20px 24px; display: flex; flex-direction: column; gap: 14px">
+<div style="width: 40px; height: 5px; border-radius: 3px; background: #D9D5E4; align-self: center"></div>
+<div style="display: flex; align-items: center; justify-content: space-between; height: 44px">
+<div style="font-family: 'Bricolage Grotesque', system-ui, sans-serif; font-weight: 700; font-size: 24px; letter-spacing: -0.5px">¿Qué día fue?</div>
+<div style="display: flex; gap: 6px">
+<button type="button" aria-pressed="true" style="height: 44px; padding: 0 16px; border: 0; border-radius: 16px; background: #1D1B26; color: #FFFFFF; font-family: inherit; font-size: 14px; font-weight: 700">Hoy</button>
+<button type="button" style="height: 44px; padding: 0 16px; border: 0; border-radius: 16px; background: #EDEBF3; color: #1D1B26; font-family: inherit; font-size: 14px; font-weight: 600">Ayer</button>
+</div>
+</div>
+<div style="display: flex; align-items: center; justify-content: space-between; height: 44px">
+<button type="button" aria-label="Mes anterior" style="width: 44px; height: 44px; border: 0; border-radius: 22px; background: #EDEBF3; color: #1D1B26; display: flex; align-items: center; justify-content: center; flex: none"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"></path></svg></button>
+<div style="font-size: 16px; font-weight: 700">Noviembre 2026</div>
+<button type="button" aria-label="Mes siguiente" disabled style="width: 44px; height: 44px; border: 0; border-radius: 22px; background: #EDEBF3; color: #A29EB3; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg></button>
+</div>
+<div style="display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; font-size: 11px; font-weight: 700; color: #625E73"><div style="text-align: center">LUN</div><div style="text-align: center">MAR</div><div style="text-align: center">MIÉ</div><div style="text-align: center">JUE</div><div style="text-align: center">VIE</div><div style="text-align: center">SÁB</div><div style="text-align: center">DOM</div></div>
+<div style="display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px">
+<div style="height: 46px"></div>
+<div style="height: 46px"></div>
+<div style="height: 46px"></div>
+<div style="height: 46px"></div>
+<div style="height: 46px"></div>
+<div style="height: 46px"></div>
+<button type="button" style="height: 46px; border: 0; border-radius: 16px; background: transparent; color: #1D1B26; font-weight: 600; font-family: inherit; font-size: 16px; font-variant-numeric: tabular-nums; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px 0 0">1<div style="width: 4px; height: 4px"></div></button>
+<button type="button" style="height: 46px; border: 0; border-radius: 16px; background: transparent; color: #1D1B26; font-weight: 600; font-family: inherit; font-size: 16px; font-variant-numeric: tabular-nums; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px 0 0">2<div style="width: 4px; height: 4px; border-radius: 2px; background: {{accentDeep}}"></div></button>
+<button type="button" style="height: 46px; border: 0; border-radius: 16px; background: transparent; color: #1D1B26; font-weight: 600; font-family: inherit; font-size: 16px; font-variant-numeric: tabular-nums; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px 0 0">3<div style="width: 4px; height: 4px; border-radius: 2px; background: {{accentDeep}}"></div></button>
+<button type="button" style="height: 46px; border: 0; border-radius: 16px; background: transparent; color: #1D1B26; font-weight: 600; font-family: inherit; font-size: 16px; font-variant-numeric: tabular-nums; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px 0 0">4<div style="width: 4px; height: 4px"></div></button>
+<button type="button" style="height: 46px; border: 0; border-radius: 16px; background: transparent; color: #1D1B26; font-weight: 600; font-family: inherit; font-size: 16px; font-variant-numeric: tabular-nums; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px 0 0">5<div style="width: 4px; height: 4px; border-radius: 2px; background: {{accentDeep}}"></div></button>
+<button type="button" style="height: 46px; border: 0; border-radius: 16px; background: transparent; color: #1D1B26; font-weight: 600; font-family: inherit; font-size: 16px; font-variant-numeric: tabular-nums; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px 0 0">6<div style="width: 4px; height: 4px; border-radius: 2px; background: {{accentDeep}}"></div></button>
+<button type="button" style="height: 46px; border: 0; border-radius: 16px; background: transparent; color: #1D1B26; font-weight: 600; font-family: inherit; font-size: 16px; font-variant-numeric: tabular-nums; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px 0 0">7<div style="width: 4px; height: 4px; border-radius: 2px; background: {{accentDeep}}"></div></button>
+<button type="button" style="height: 46px; border: 0; border-radius: 16px; background: transparent; color: #1D1B26; font-weight: 600; font-family: inherit; font-size: 16px; font-variant-numeric: tabular-nums; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px 0 0">8<div style="width: 4px; height: 4px; border-radius: 2px; background: {{accentDeep}}"></div></button>
+<button type="button" aria-pressed="true" aria-label="9 de noviembre, hoy" style="height: 46px; border: 0; border-radius: 16px; background: {{accent}}; color: #1D1B26; font-weight: 700; font-family: inherit; font-size: 16px; font-variant-numeric: tabular-nums; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px 0 0">9<div style="width: 4px; height: 4px; border-radius: 2px; background: #1D1B26"></div></button>
+<button type="button" disabled style="height: 46px; border: 0; border-radius: 16px; background: transparent; color: #A29EB3; font-weight: 500; font-family: inherit; font-size: 16px; font-variant-numeric: tabular-nums; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px 0 0">10<div style="width: 4px; height: 4px"></div></button>
+<button type="button" disabled style="height: 46px; border: 0; border-radius: 16px; background: transparent; color: #A29EB3; font-weight: 500; font-family: inherit; font-size: 16px; font-variant-numeric: tabular-nums; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px 0 0">11<div style="width: 4px; height: 4px"></div></button>
+<button type="button" disabled style="height: 46px; border: 0; border-radius: 16px; background: transparent; color: #A29EB3; font-weight: 500; font-family: inherit; font-size: 16px; font-variant-numeric: tabular-nums; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px 0 0">12<div style="width: 4px; height: 4px"></div></button>
+<button type="button" disabled style="height: 46px; border: 0; border-radius: 16px; background: transparent; color: #A29EB3; font-weight: 500; font-family: inherit; font-size: 16px; font-variant-numeric: tabular-nums; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px 0 0">13<div style="width: 4px; height: 4px"></div></button>
+<button type="button" disabled style="height: 46px; border: 0; border-radius: 16px; background: transparent; color: #A29EB3; font-weight: 500; font-family: inherit; font-size: 16px; font-variant-numeric: tabular-nums; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px 0 0">14<div style="width: 4px; height: 4px"></div></button>
+<button type="button" disabled style="height: 46px; border: 0; border-radius: 16px; background: transparent; color: #A29EB3; font-weight: 500; font-family: inherit; font-size: 16px; font-variant-numeric: tabular-nums; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px 0 0">15<div style="width: 4px; height: 4px"></div></button>
+<button type="button" disabled style="height: 46px; border: 0; border-radius: 16px; background: transparent; color: #A29EB3; font-weight: 500; font-family: inherit; font-size: 16px; font-variant-numeric: tabular-nums; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px 0 0">16<div style="width: 4px; height: 4px"></div></button>
+<button type="button" disabled style="height: 46px; border: 0; border-radius: 16px; background: transparent; color: #A29EB3; font-weight: 500; font-family: inherit; font-size: 16px; font-variant-numeric: tabular-nums; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px 0 0">17<div style="width: 4px; height: 4px"></div></button>
+<button type="button" disabled style="height: 46px; border: 0; border-radius: 16px; background: transparent; color: #A29EB3; font-weight: 500; font-family: inherit; font-size: 16px; font-variant-numeric: tabular-nums; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px 0 0">18<div style="width: 4px; height: 4px"></div></button>
+<button type="button" disabled style="height: 46px; border: 0; border-radius: 16px; background: transparent; color: #A29EB3; font-weight: 500; font-family: inherit; font-size: 16px; font-variant-numeric: tabular-nums; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px 0 0">19<div style="width: 4px; height: 4px"></div></button>
+<button type="button" disabled style="height: 46px; border: 0; border-radius: 16px; background: transparent; color: #A29EB3; font-weight: 500; font-family: inherit; font-size: 16px; font-variant-numeric: tabular-nums; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px 0 0">20<div style="width: 4px; height: 4px"></div></button>
+<button type="button" disabled style="height: 46px; border: 0; border-radius: 16px; background: transparent; color: #A29EB3; font-weight: 500; font-family: inherit; font-size: 16px; font-variant-numeric: tabular-nums; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px 0 0">21<div style="width: 4px; height: 4px"></div></button>
+<button type="button" disabled style="height: 46px; border: 0; border-radius: 16px; background: transparent; color: #A29EB3; font-weight: 500; font-family: inherit; font-size: 16px; font-variant-numeric: tabular-nums; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px 0 0">22<div style="width: 4px; height: 4px"></div></button>
+<button type="button" disabled style="height: 46px; border: 0; border-radius: 16px; background: transparent; color: #A29EB3; font-weight: 500; font-family: inherit; font-size: 16px; font-variant-numeric: tabular-nums; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px 0 0">23<div style="width: 4px; height: 4px"></div></button>
+<button type="button" disabled style="height: 46px; border: 0; border-radius: 16px; background: transparent; color: #A29EB3; font-weight: 500; font-family: inherit; font-size: 16px; font-variant-numeric: tabular-nums; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px 0 0">24<div style="width: 4px; height: 4px"></div></button>
+<button type="button" disabled style="height: 46px; border: 0; border-radius: 16px; background: transparent; color: #A29EB3; font-weight: 500; font-family: inherit; font-size: 16px; font-variant-numeric: tabular-nums; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px 0 0">25<div style="width: 4px; height: 4px"></div></button>
+<button type="button" disabled style="height: 46px; border: 0; border-radius: 16px; background: transparent; color: #A29EB3; font-weight: 500; font-family: inherit; font-size: 16px; font-variant-numeric: tabular-nums; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px 0 0">26<div style="width: 4px; height: 4px"></div></button>
+<button type="button" disabled style="height: 46px; border: 0; border-radius: 16px; background: transparent; color: #A29EB3; font-weight: 500; font-family: inherit; font-size: 16px; font-variant-numeric: tabular-nums; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px 0 0">27<div style="width: 4px; height: 4px"></div></button>
+<button type="button" disabled style="height: 46px; border: 0; border-radius: 16px; background: transparent; color: #A29EB3; font-weight: 500; font-family: inherit; font-size: 16px; font-variant-numeric: tabular-nums; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px 0 0">28<div style="width: 4px; height: 4px"></div></button>
+<button type="button" disabled style="height: 46px; border: 0; border-radius: 16px; background: transparent; color: #A29EB3; font-weight: 500; font-family: inherit; font-size: 16px; font-variant-numeric: tabular-nums; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px 0 0">29<div style="width: 4px; height: 4px"></div></button>
+<button type="button" disabled style="height: 46px; border: 0; border-radius: 16px; background: transparent; color: #A29EB3; font-weight: 500; font-family: inherit; font-size: 16px; font-variant-numeric: tabular-nums; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px 0 0">30<div style="width: 4px; height: 4px"></div></button>
+<div style="height: 46px"></div>
+<div style="height: 46px"></div>
+<div style="height: 46px"></div>
+<div style="height: 46px"></div>
+<div style="height: 46px"></div>
+<div style="height: 46px"></div>
+</div>
+<div style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #625E73"><div style="width: 6px; height: 6px; border-radius: 3px; background: {{accentDeep}}"></div><div>Días con movimientos</div></div>
+<a href="Movimiento.dc.html" style="height: 56px; border-radius: 18px; background: {{accent}}; color: #1D1B26; font-size: 17px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 8px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>Listo</a>
+</div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"acento":{"editor":"enum","options":["Lila","Azul"],"default":"Lila"},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+renderVals() {
+var azul = (this.props.acento ?? 'Lila') === 'Azul';
+return {
+accent: azul ? '#B8D3FA' : '#CFC0F8',
+accentSoft: azul ? '#E5EFFE' : '#EEE8FD',
+accentDeep: azul ? '#2B5BAA' : '#5A43B5'
+};
+}
+}
+</script>
+</body>
+</html>

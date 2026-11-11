@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc --noEmit)",
+      "Bash(npm run typecheck)",
+      "Bash(npx expo-doctor)",
+      "Bash(npm test)",
+      "Bash(npm run lint)",
+      "Bash(npx jest:*)",
+      "Bash(git status)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git branch --show-current)",
+      "Bash(git branch -a)"
+    ]
+  }
+}

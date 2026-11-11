@@ -1,148 +1,146 @@
-import { Feather } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { type ComponentProps, type ReactNode, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
+import { type ReactNode, useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Switch, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { getApiKey } from '../src/ai/config';
 import { AppText } from '../src/components/AppText';
-import { IconButton } from '../src/components/IconButton';
-import { getSetting, setSetting, SETTING_SHOW_INCOME } from '../src/db/repo';
+import { ScreenHeader } from '../src/components/ScreenHeader';
+import { SettingsRow } from '../src/components/SettingsRow';
+import { setSetting, SETTING_ACCUMULATED, SETTING_SHOW_INCOME } from '../src/db/repo';
+import { listLabel, useCurrentList } from '../src/hooks/useData';
+import { useHomeSettings } from '../src/hooks/useHomeData';
 import { exportBackup, pickAndImportBackup } from '../src/lib/backup';
-import { colors, radius } from '../src/theme';
+import { exportCsv } from '../src/lib/csv';
+import { withSystemDialog } from '../src/lib/security';
+import { useLock } from '../src/security/LockProvider';
+import { colors } from '../src/theme';
 
-type IconName = ComponentProps<typeof Feather>['name'];
-
-function Row({
-  icon,
-  title,
-  subtitle,
-  onPress,
-  right,
-}: {
-  icon: IconName;
-  title: string;
-  subtitle?: string;
-  onPress?: () => void;
-  right?: ReactNode;
-}) {
+function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <Pressable
-      onPress={onPress}
-      disabled={!onPress}
-      style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-    >
-      <View style={styles.rowIcon}>
-        <Feather name={icon} size={18} color={colors.text} />
-      </View>
-      <View style={styles.rowTexts}>
-        <AppText weight="semibold" size={15}>
-          {title}
-        </AppText>
-        {subtitle && (
-          <AppText size={12} color={colors.textMuted}>
-            {subtitle}
-          </AppText>
-        )}
-      </View>
-      {right}
-    </Pressable>
+    <>
+      <AppText weight="semibold" size={13} color={colors.textMuted} style={styles.sectionTitle}>
+        {title}
+      </AppText>
+      <View style={styles.section}>{children}</View>
+    </>
   );
 }
 
+function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
+  return <Switch value={value} onValueChange={onChange} trackColor={{ true: colors.income, false: colors.border }} thumbColor={colors.surface} />;
+}
+
+/** "Configuración" (Video Yt/16–22, TikTok/03) with the rows that make sense for this app. */
 export default function SettingsScreen() {
   const db = useSQLiteContext();
   const insets = useSafeAreaInsets();
-  const [showIncome, setShowIncome] = useState(false);
+  const { config } = useLock();
+  const { listId, list, lists } = useCurrentList();
+  const settings = useHomeSettings();
   const [busy, setBusy] = useState(false);
+  const [hasKey, setHasKey] = useState(false);
+  const inList = `En tu lista actual "${listLabel(list)}"`;
 
   useEffect(() => {
-    getSetting(db, SETTING_SHOW_INCOME).then((v) => setShowIncome(v === 'true'));
-  }, [db]);
+    getApiKey().then((k) => setHasKey(!!k));
+  }, []);
 
-  const toggleIncome = (value: boolean) => {
-    setShowIncome(value);
-    setSetting(db, SETTING_SHOW_INCOME, String(value));
-  };
-
-  const runExport = async () => {
+  const run = async (task: () => Promise<void>, errorTitle: string) => {
     setBusy(true);
     try {
-      await exportBackup(db);
+      // Share sheet and file picker leave the app for a moment; that must not lock it.
+      await withSystemDialog(task);
     } catch (error) {
-      Alert.alert('No se pudo exportar', error instanceof Error ? error.message : String(error));
+      Alert.alert(errorTitle, error instanceof Error ? error.message : String(error));
     } finally {
       setBusy(false);
     }
   };
 
-  const runImport = async () => {
-    setBusy(true);
-    try {
+  const runImport = () =>
+    run(async () => {
       const summary = await pickAndImportBackup(db);
       if (summary) {
         const skipped = summary.skipped > 0 ? `\n${summary.skipped} registros inválidos se omitieron.` : '';
         Alert.alert(
           'Respaldo importado',
-          `${summary.transactions} movimientos y ${summary.categories} categorías nuevos o actualizados.${skipped}`,
+          `${summary.transactions} movimientos, ${summary.categories} categorías y ${summary.other} otros datos nuevos o actualizados.${skipped}`,
         );
       }
-    } catch (error) {
-      Alert.alert('No se pudo importar', error instanceof Error ? error.message : String(error));
-    } finally {
-      setBusy(false);
-    }
-  };
+    }, 'No se pudo importar');
+
+  const securitySubtitle = !config?.pinEnabled ? 'Sin bloqueo' : config.biometricsEnabled ? 'PIN y huella' : 'PIN';
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top + 8 }]}>
-      <View style={styles.header}>
-        <AppText weight="extrabold" size={26}>
-          Configuración
-        </AppText>
-        <IconButton icon="x" label="Cerrar" background={colors.chip} onPress={() => router.back()} />
-      </View>
+      <ScreenHeader title="Configuración" />
 
       <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}>
-        <AppText size={13} color={colors.textMuted} style={styles.sectionTitle}>
-          Vista
-        </AppText>
-        <View style={styles.card}>
-          <Row
-            icon="trending-up"
+        <Section title="Contenido">
+          <SettingsRow emoji="🥑" title="Editar categorías" subtitle={inList} onPress={() => router.push('/categories')} />
+          <SettingsRow emoji="💰" title="Presupuestos" subtitle={inList} onPress={() => router.push('/budgets')} />
+          <SettingsRow emoji="#️⃣" title="Editar etiquetas" subtitle={inList} onPress={() => router.push('/tags')} />
+          <SettingsRow emoji="🔁" title="Lista de transacciones recurrentes" onPress={() => router.push('/recurring')} />
+          <SettingsRow emoji="📝" title="Tus listas" badge={String(lists.length)} onPress={() => router.push('/lists')} />
+          <SettingsRow
+            emoji="📊"
+            title="Exportar CSV"
+            subtitle={`Movimientos de "${listLabel(list)}" para Excel`}
+            onPress={busy ? undefined : () => run(async () => void (await exportCsv(db, listId, listLabel(list))), 'No se pudo exportar')}
+          />
+          <SettingsRow
+            emoji="📤"
+            title="Exportar respaldo"
+            subtitle="Archivo JSON con todo, para guardar en Google Drive"
+            onPress={busy ? undefined : () => run(() => exportBackup(db), 'No se pudo exportar')}
+          />
+          <SettingsRow emoji="📥" title="Importar respaldo" subtitle="Se combina con tus datos, sin duplicar" onPress={busy ? undefined : runImport} />
+          {busy && <ActivityIndicator style={styles.spinner} color={colors.textMuted} />}
+          <SettingsRow
+            emoji="➕"
             title="Mostrar ingresos"
-            subtitle="El total muestra el balance del mes (ingresos − gastos)"
-            right={
-              <Switch
-                value={showIncome}
-                onValueChange={toggleIncome}
-                trackColor={{ true: colors.income, false: colors.border }}
-                thumbColor={colors.surface}
-              />
-            }
+            right={<Toggle value={settings.showIncome} onChange={(v) => setSetting(db, SETTING_SHOW_INCOME, String(v))} />}
           />
-        </View>
+          {settings.showIncome && (
+            <SettingsRow
+              emoji="⤵️"
+              title="Acumulado"
+              subtitle="Mostrar el total de todos los meses en lugar del mes actual solamente"
+              right={<Toggle value={settings.accumulated} onChange={(v) => setSetting(db, SETTING_ACCUMULATED, String(v))} />}
+            />
+          )}
+          <SettingsRow emoji="🤖" title="Mejoras de IA" subtitle={inList} onPress={() => router.push('/ai-rules')} />
+        </Section>
 
-        <AppText size={13} color={colors.textMuted} style={styles.sectionTitle}>
-          Respaldo
-        </AppText>
-        <View style={styles.card}>
-          <Row
-            icon="upload"
-            title="Exportar respaldo (JSON)"
-            subtitle="Guárdalo en Google Drive para cambiar de celular"
-            onPress={busy ? undefined : runExport}
+        <Section title="Inteligencia artificial">
+          <SettingsRow
+            emoji="✨"
+            title="Gemini"
+            subtitle={hasKey ? 'Clave guardada' : 'Agrega tu clave para usar la voz y el chat'}
+            onPress={() => router.push('/ai')}
           />
-          <View style={styles.divider} />
-          <Row
-            icon="download"
-            title="Importar respaldo (JSON)"
-            subtitle="Se combina con tus datos, sin duplicar"
-            onPress={busy ? undefined : runImport}
+        </Section>
+
+        <Section title="Privacidad">
+          <SettingsRow emoji="🔒" title="Seguridad" subtitle={securitySubtitle} onPress={() => router.push('/security')} />
+        </Section>
+
+        <Section title="Más">
+          <SettingsRow
+            emoji="👋"
+            title="Ver la bienvenida otra vez"
+            subtitle="Elegir categorías, voz y estilo"
+            // The setting is left alone: closing the app halfway must not force the welcome again.
+            onPress={() => router.replace({ pathname: '/onboarding', params: { replay: '1' } })}
           />
-        </View>
-        {busy && <ActivityIndicator style={styles.spinner} color={colors.textMuted} />}
+          {/* Only while developing: it never shows in the installed APK. */}
+          {__DEV__ && (
+            <SettingsRow emoji="🧪" title="Desarrollo" subtitle="Datos de prueba" onPress={() => router.push('/dev')} />
+          )}
+        </Section>
 
         <AppText size={12} color={colors.textMuted} style={styles.footer}>
           My Financial AI v{Constants.expoConfig?.version ?? '0.1.0'} · Tus datos viven solo en este celular.
@@ -157,53 +155,16 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingBottom: 8,
-  },
   sectionTitle: {
     paddingHorizontal: 24,
     paddingTop: 20,
-    paddingBottom: 8,
+    paddingBottom: 6,
   },
-  card: {
-    marginHorizontal: 16,
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    overflow: 'hidden',
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-  },
-  rowPressed: {
-    backgroundColor: colors.chip,
-  },
-  rowIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: radius.sm,
-    backgroundColor: colors.chip,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  rowTexts: {
-    flex: 1,
-    gap: 2,
-  },
-  divider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: colors.border,
-    marginLeft: 62,
+  section: {
+    paddingHorizontal: 8,
   },
   spinner: {
-    marginTop: 16,
+    marginVertical: 8,
   },
   footer: {
     textAlign: 'center',
