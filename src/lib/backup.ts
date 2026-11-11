@@ -12,10 +12,12 @@ import {
   type AiRule,
   type Budget,
   type Category,
+  type Instrument,
   type List,
   type Recurring,
   type SettingRow,
   type Tag,
+  type Trade,
   type Transaction,
   TRANSACTION_SOURCES,
 } from '../db/types';
@@ -26,9 +28,10 @@ import { parseTags, serializeTags } from './tags';
 const FORMAT = 'my-financial-ai-backup';
 /**
  * v1: categories, transactions, settings. v2 adds lists, tags, recurring, budgets and AI rules.
- * v3 adds account groups, accounts and transfers. Older files still import.
+ * v3 adds account groups, accounts and transfers. v4 adds instruments and trades (prices and
+ * exchange rates are a cache and are fetched again, so they are not in the file). Older files still import.
  */
-const FORMAT_VERSION = 3;
+const FORMAT_VERSION = 4;
 
 interface BackupFile {
   format: typeof FORMAT;
@@ -44,6 +47,8 @@ interface BackupFile {
   recurring?: Recurring[];
   budgets?: Budget[];
   ai_rules?: AiRule[];
+  instruments?: Instrument[];
+  trades?: Trade[];
   settings: SettingRow[];
 }
 
@@ -72,6 +77,8 @@ export async function exportBackup(db: SQLiteDatabase): Promise<void> {
     recurring: await db.getAllAsync<Recurring>('SELECT * FROM recurring'),
     budgets: await db.getAllAsync<Budget>('SELECT * FROM budgets'),
     ai_rules: await db.getAllAsync<AiRule>('SELECT * FROM ai_rules'),
+    instruments: await db.getAllAsync<Instrument>('SELECT * FROM instruments'),
+    trades: await db.getAllAsync<Trade>('SELECT * FROM trades'),
     settings: await db.getAllAsync<SettingRow>('SELECT * FROM settings'),
   };
 
@@ -127,6 +134,13 @@ const validators = {
     isNullableString(r.account_id) && FREQUENCIES.includes(r.frequency as string) && isInt(r.anchor_day) && isInt(r.next_at),
   budget: (r: Rec) => hasRow(r) && isString(r.list_id) && isString(r.category_id) && isInt(r.amount) && (r.amount as number) > 0,
   aiRule: (r: Rec) => hasRow(r) && isString(r.list_id) && isString(r.phrase) && isString(r.keywords) && isString(r.category_id),
+  instrument: (r: Rec) =>
+    hasRow(r) && isString(r.symbol) && isNullableString(r.name) && isNullableString(r.exchange) && isString(r.currency) && isString(r.provider_symbol),
+  trade: (r: Rec) =>
+    hasRow(r) && isString(r.account_id) && isString(r.instrument_id) && (r.side === 'buy' || r.side === 'sell') &&
+    isInt(r.quantity_e6) && (r.quantity_e6 as number) > 0 && isInt(r.price_e4) && (r.price_e4 as number) > 0 &&
+    isNullableInt(r.fee_minor) && isInt(r.gross_minor) && (r.gross_minor as number) >= 0 && isString(r.currency) &&
+    isInt(r.executed_at) && isNullableString(r.source) && isNullableString(r.source_ref) && isNullableString(r.note),
   setting: (r: Rec) => isString(r.key) && isString(r.value) && isInt(r.updated_at),
 };
 
@@ -179,6 +193,11 @@ const COLUMNS = {
   ],
   budgets: ['id', 'list_id', 'category_id', 'amount', 'created_at', 'updated_at', 'deleted_at'],
   ai_rules: ['id', 'list_id', 'phrase', 'keywords', 'category_id', 'created_at', 'updated_at', 'deleted_at'],
+  instruments: ['id', 'symbol', 'name', 'exchange', 'currency', 'provider_symbol', 'created_at', 'updated_at', 'deleted_at'],
+  trades: [
+    'id', 'account_id', 'instrument_id', 'side', 'quantity_e6', 'price_e4', 'fee_minor', 'gross_minor', 'currency',
+    'executed_at', 'source', 'source_ref', 'note', 'created_at', 'updated_at', 'deleted_at',
+  ],
 } as const;
 
 /**
@@ -342,6 +361,38 @@ export async function importBackupFromText(db: SQLiteDatabase, text: string): Pr
       (r) => (knownCategory(r.category_id) ? { ...r, list_id: knownList(r.list_id as string) } : null),
       other,
     );
+
+    // Instruments are one per symbol. If this phone already knows the symbol under another id, the
+    // local one stays and the trades of the file are pointed at it.
+    const sameInstrument = new Map<string, string>();
+    await upsert('instruments', backup.instruments, validators.instrument,
+      async (r) => {
+        const local = await txn.getFirstAsync<{ id: string }>(
+          'SELECT id FROM instruments WHERE provider_symbol = ? AND deleted_at IS NULL AND id <> ?',
+          r.provider_symbol as string, r.id as string,
+        );
+        if (local && r.deleted_at == null) {
+          sameInstrument.set(r.id as string, local.id);
+          return null;
+        }
+        return { ...r, name: r.name ?? '', exchange: r.exchange ?? '' };
+      }, other);
+    const instrumentIds = new Set((await txn.getAllAsync<{ id: string }>('SELECT id FROM instruments')).map((r) => r.id));
+    await upsert('trades', backup.trades, validators.trade,
+      async (r) => {
+        const instrumentId = sameInstrument.get(r.instrument_id as string) ?? (r.instrument_id as string);
+        // A trade without its account or its instrument cannot be valued: it is left out.
+        if (!knownAccount(r.account_id) || !instrumentIds.has(instrumentId)) {
+          summary.skipped++;
+          return null;
+        }
+        // The same operation of a broker report already imported on this phone under another id.
+        if (isString(r.source_ref) && r.deleted_at == null &&
+          (await conflicts('SELECT 1 FROM trades WHERE source_ref = ? AND deleted_at IS NULL AND id <> ?', r.source_ref, r.id as string))) {
+          return null;
+        }
+        return { ...r, instrument_id: instrumentId, fee_minor: r.fee_minor ?? 0, source: r.source ?? 'manual', source_ref: r.source_ref ?? null, note: r.note ?? null };
+      }, other);
 
     for (const s of backup.settings) {
       if (!validators.setting(s as unknown as Rec)) {

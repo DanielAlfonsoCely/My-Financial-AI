@@ -7,6 +7,7 @@
 
 import type { SQLiteDatabase } from 'expo-sqlite';
 
+import { ensureInstrument, saveTrade } from '../db/investments';
 import {
   createAccount,
   createAccountGroup,
@@ -28,7 +29,7 @@ import { keywords } from '../lib/text';
 import { categoryPalette } from '../theme';
 
 /** Tables the seed writes to, in the order they must be emptied (children before parents). */
-const TABLES = ['transactions', 'recurring', 'budgets', 'ai_rules', 'tags', 'categories', 'accounts', 'account_groups', 'lists'] as const;
+const TABLES = ['transactions', 'trades', 'instruments', 'recurring', 'budgets', 'ai_rules', 'tags', 'categories', 'accounts', 'account_groups', 'lists'] as const;
 const SETTING_SEEDED_AT = 'dev_seed_at';
 const DAY = 86_400_000;
 const MONTHS_BACK = 6;
@@ -145,6 +146,15 @@ export async function clearDevData(db: SQLiteDatabase): Promise<number> {
     await db.runAsync(`UPDATE accounts SET group_id = NULL WHERE id NOT IN ${seeded('accounts')} AND group_id IN ${seeded('account_groups')}`);
     await db.runAsync(`DELETE FROM budgets WHERE id NOT IN ${seeded('budgets')} AND category_id IN ${seeded('categories')}`);
     await db.runAsync(`DELETE FROM ai_rules WHERE id NOT IN ${seeded('ai_rules')} AND category_id IN ${seeded('categories')}`);
+
+    // Real trades made in a test account or on a test instrument cannot outlive them.
+    await db.runAsync(
+      `DELETE FROM trades WHERE id NOT IN ${seeded('trades')}
+         AND (account_id IN ${seeded('accounts')} OR instrument_id IN ${seeded('instruments')})`,
+    );
+    // Cached prices of the test instruments.
+    await db.runAsync(`DELETE FROM quotes WHERE instrument_id IN ${seeded('instruments')}`);
+    await db.runAsync(`DELETE FROM price_history WHERE instrument_id IN ${seeded('instruments')}`);
 
     let count = 0;
     for (const table of TABLES) {
@@ -270,8 +280,32 @@ async function populate(db: SQLiteDatabase, now: number): Promise<void> {
       cardSpend = cardSpend - Math.round(cardSpend / 1000) * 1000;
     }
   }
-  // A deposit to the broker: pesos leave, dollars arrive (US$250,00).
-  await add(P, { kind: 'transfer', amount: 1_025_000, category_id: null, account_id: davivienda, to_account_id: xtb, to_amount: 25_000, title: 'Depósito a XTB', occurred_at: on(2, 20, 11) });
+  // Deposits to the broker: pesos leave, dollars arrive (US$500,00 in all).
+  await add(P, { kind: 'transfer', amount: 1_230_000, category_id: null, account_id: davivienda, to_account_id: xtb, to_amount: 30_000, title: 'Depósito a XTB', occurred_at: on(4, 4, 11) });
+  await add(P, { kind: 'transfer', amount: 820_000, category_id: null, account_id: davivienda, to_account_id: xtb, to_amount: 20_000, title: 'Depósito a XTB', occurred_at: on(2, 4, 11) });
+
+  // ----- Investments: real symbols, so the price services answer for them -----
+  const instrument = (symbol: string, name: string, exchange: string) =>
+    ensureInstrument(db, { symbol, name, exchange, currency: 'USD', provider_symbol: symbol });
+  const voo = await instrument('VOO', 'Vanguard S&P 500 ETF', 'NYSEArca');
+  const nvda = await instrument('NVDA', 'NVIDIA Corporation', 'NASDAQ');
+  const msft = await instrument('MSFT', 'Microsoft Corporation', 'NASDAQ');
+  const ko = await instrument('KO', 'The Coca-Cola Company', 'NYSE');
+  const trade = (instrumentId: string, side: 'buy' | 'sell', units: number, unitPrice: number, back: number, day: number) =>
+    saveTrade(db, {
+      account_id: xtb,
+      instrument_id: instrumentId,
+      side,
+      quantity_e6: Math.round(units * 1_000_000),
+      price_e4: Math.round(unitPrice * 10_000),
+      executed_at: on(back, day, 10),
+    });
+  await trade(voo, 'buy', 0.3512, 598.2, 4, 6);
+  await trade(nvda, 'buy', 0.8, 138.5, 4, 12);
+  await trade(msft, 'buy', 0.15, 440, 2, 6);
+  await trade(ko, 'buy', 0.68, 64.1, 2, 9);
+  // One sold in part, to have a realized gain.
+  await trade(nvda, 'sell', 0.2, 150, 1, 18);
 
   // ----- Budgets of this month: one over, one near 85 %, one with room -----
   const monthStart = new Date(today.getFullYear(), today.getMonth(), 1).getTime();

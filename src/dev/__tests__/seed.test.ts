@@ -13,17 +13,21 @@ import {
   listRecurring,
   setBudget,
 } from '../../db/repo';
+import { ensureInstrument, getPortfolio, saveQuotes, saveTrade } from '../../db/investments';
 import { PERSONAL_LIST_ID } from '../../db/seed';
 import { groupAccounts, summarizeAccounts } from '../../lib/accounts';
 import { count, openTestDatabase } from '../../test/sqlite';
 import { clearDevData, getDevSeedStatus, seedDevData } from '../seed';
 
 const NOW = new Date(2026, 10, 10, 15, 0).getTime();
-const TABLES = ['transactions', 'recurring', 'budgets', 'ai_rules', 'tags', 'categories', 'accounts', 'account_groups', 'lists', 'settings'];
+const TABLES = ['transactions', 'trades', 'instruments', 'quotes', 'price_history', 'recurring', 'budgets', 'ai_rules', 'tags', 'categories', 'accounts', 'account_groups', 'lists', 'settings'];
 
 async function dump(db: SQLiteDatabase) {
   const result: Record<string, unknown[]> = {};
-  for (const table of TABLES) result[table] = await db.getAllAsync(`SELECT * FROM ${table} ORDER BY ${table === 'settings' ? 'key' : 'id'}`);
+  for (const table of TABLES) {
+    const order = table === 'settings' ? 'key' : table === 'quotes' || table === 'price_history' ? 'instrument_id' : 'id';
+    result[table] = await db.getAllAsync(`SELECT * FROM ${table} ORDER BY ${order}`);
+  }
   return result;
 }
 
@@ -59,7 +63,13 @@ describe('datos de prueba', () => {
     const card = accounts.find((a) => a.type === 'credit')!;
     expect(card.balance).toBeGreaterThan(0);
     expect(card.balance).toBeLessThan(card.credit_limit!);
-    expect(accounts.find((a) => a.name === 'XTB')).toMatchObject({ currency: 'USD', balance: 25_000 });
+    // Free cash of the broker: US$500 deposited − buys + the partial sale.
+    expect(accounts.find((a) => a.name === 'XTB')).toMatchObject({ currency: 'USD', balance: 50_000 - 43_048 + 3_000 });
+    const xtb = accounts.find((a) => a.name === 'XTB')!.id;
+    const portfolio = (await getPortfolio(db, xtb))!;
+    expect(portfolio.holdings.map((h) => h.instrument.symbol).sort()).toEqual(['KO', 'MSFT', 'NVDA', 'VOO']);
+    expect(portfolio.holdings.find((h) => h.instrument.symbol === 'NVDA')).toMatchObject({ quantity_e6: 600_000, realized_minor: 3_000 - 2_770 });
+    expect(portfolio.total_minor).toBe(portfolio.cash_minor + portfolio.cost_minor);
     const summary = summarizeAccounts(accounts);
     expect(summary.invested).toBe(2_000_000);
     expect(summary.net).toBe(summary.available + summary.invested - summary.debt);
@@ -128,6 +138,11 @@ describe('datos de prueba', () => {
     const trabajo = (await listLists(db)).find((l) => l.name === 'Trabajo')!.id;
     const ownCategory = await createCategory(db, trabajo, { name: 'Mía', emoji: '⭐', color: '#fff', kind: 'expense' });
     const expense = await createTransaction(db, trabajo, { kind: 'expense', amount: 9_000, currency: 'COP', category_id: ownCategory, account_id: davivienda, title: 'Real', occurred_at: NOW });
+    // Prices fetched for the test positions, and a real trade made on top of them.
+    const xtb = accounts.find((a) => a.name === 'XTB')!.id;
+    const voo = await ensureInstrument(db, { symbol: 'VOO', name: '', exchange: '', currency: 'USD', provider_symbol: 'VOO' });
+    await saveQuotes(db, [{ instrument_id: voo, price_e4: 6_895_000, prev_close_e4: null, as_of: NOW, provider: 'yahoo' }]);
+    await saveTrade(db, { account_id: xtb, instrument_id: voo, side: 'buy', quantity_e6: 1000, price_e4: 6_895_000, executed_at: NOW });
     const transfer = await createTransaction(db, PERSONAL_LIST_ID, { kind: 'transfer', amount: 5_000, currency: 'COP', category_id: null, account_id: davivienda, to_account_id: billetera, title: 'Real', occurred_at: NOW });
 
     await clearDevData(db);
@@ -138,5 +153,6 @@ describe('datos de prueba', () => {
     expect(await getTransaction(db, transfer)).toBeNull();
     expect(await count(db, 'transactions')).toBe(1);
     expect(await count(db, 'accounts')).toBe(0);
+    for (const table of ['trades', 'instruments', 'quotes']) expect(await count(db, table)).toBe(0);
   });
 });

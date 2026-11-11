@@ -14,6 +14,7 @@ import {
   setBudget,
   setSetting,
 } from '../../db/repo';
+import { ensureInstrument, getPortfolio, saveQuotes, saveTrade } from '../../db/investments';
 import { PERSONAL_LIST_ID } from '../../db/seed';
 import { count, openTestDatabase } from '../../test/sqlite';
 import { exportBackup, importBackupFromText } from '../backup';
@@ -189,5 +190,29 @@ describe('respaldo JSON', () => {
     const summary = await importBackupFromText(target, JSON.stringify(file));
     expect(summary).toMatchObject({ transactions: 1, skipped: 1 });
     expect(await target.getFirstAsync("SELECT account_id FROM transactions WHERE id = 'ga'")).toEqual({ account_id: null });
+  });
+  test('inversiones: las operaciones viajan y el portafolio queda igual; los precios no viajan', async () => {
+    const source = await freshDb();
+    const xtb = await createAccount(source, { name: 'XTB', emoji: '📈', color: '#fff', type: 'broker', currency: 'USD', group_id: null, opening_balance: 100_000 });
+    const voo = await ensureInstrument(source, { symbol: 'VOO', name: 'Vanguard S&P 500 ETF', exchange: 'NYSEArca', currency: 'USD', provider_symbol: 'VOO' });
+    await saveTrade(source, { account_id: xtb, instrument_id: voo, side: 'buy', quantity_e6: 2_000_000, price_e4: 6_000_000, executed_at: T - 86_400_000 });
+    await saveTrade(source, { account_id: xtb, instrument_id: voo, side: 'sell', quantity_e6: 500_000, price_e4: 6_500_000, fee_minor: 100, executed_at: T });
+    await saveQuotes(source, [{ instrument_id: voo, price_e4: 7_000_000, prev_close_e4: null, as_of: T, provider: 'yahoo' }]);
+    const text = await exported(source);
+    expect(JSON.parse(text)).not.toHaveProperty('quotes');
+
+    // The other phone already knows VOO under its own id.
+    const target = await freshDb();
+    const localVoo = await ensureInstrument(target, { symbol: 'VOO', name: 'VOO', exchange: '', currency: 'USD', provider_symbol: 'VOO' });
+    await importBackupFromText(target, text);
+    await importBackupFromText(target, text);
+
+    expect(await count(target, 'instruments')).toBe(1);
+    expect(await count(target, 'trades', `instrument_id = '${localVoo}'`)).toBe(2);
+    const [a, b] = [await getPortfolio(source, xtb), await getPortfolio(target, xtb)];
+    expect(b).toMatchObject({ cash_minor: a!.cash_minor, cost_minor: a!.cost_minor, realized_minor: a!.realized_minor });
+    expect(b!.holdings[0].quantity_e6).toBe(1_500_000);
+    // No price on the new phone until it asks for one: valued at cost.
+    expect(b!.holdings[0].quote).toBeNull();
   });
 });

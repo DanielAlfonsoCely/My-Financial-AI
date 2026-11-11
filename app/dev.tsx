@@ -10,6 +10,7 @@ import { SettingsRow } from '../src/components/SettingsRow';
 import { clearDevData, getDevSeedStatus, seedDevData } from '../src/dev/seed';
 import { useQuery } from '../src/hooks/useData';
 import { showToast } from '../src/lib/toast';
+import { refreshPrices } from '../src/prices/service';
 import { colors } from '../src/theme';
 
 const MONTHS_SHORT = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
@@ -48,6 +49,16 @@ export default function DevScreen() {
       showToast(done ? { kind: 'success', emoji: '🧪', title: 'Datos de prueba listos' } : { kind: 'error', title: 'Ya hay datos de prueba', subtitle: 'Bórralos primero para volver a poblar.' });
     });
 
+  const prices = () =>
+    run(async () => {
+      const result = await refreshPrices(db, { force: true });
+      showToast(
+        result.updated > 0
+          ? { kind: 'success', emoji: '📈', title: `${result.updated} precio${result.updated === 1 ? '' : 's'} al día` }
+          : { kind: 'error', title: 'No se pudo actualizar', subtitle: result.error ?? 'No hay posiciones todavía.' },
+      );
+    });
+
   const clear = () =>
     Alert.alert('Borrar datos de prueba', 'Se quita solo lo que creó el botón de poblar. Lo que hayas creado tú se queda.', [
       { text: 'Cancelar', style: 'cancel' },
@@ -67,8 +78,8 @@ export default function DevScreen() {
       <ScreenHeader title="Desarrollo" subtitle="Solo aparece mientras se desarrolla la app" />
       <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}>
         <AppText size={14} color={colors.textMuted} style={styles.text}>
-          Crea cuentas, seis meses de movimientos, transferencias, presupuestos, recurrentes, reglas de IA y dos listas
-          más. Son datos inventados pero guardados de verdad, para probar todo sin escribirlo a mano.
+          Crea cuentas, seis meses de movimientos, transferencias, presupuestos, recurrentes, reglas de IA, dos listas
+          más y cuatro posiciones en XTB. Son datos inventados pero guardados de verdad, para probar todo sin escribirlo a mano.
         </AppText>
 
         <SettingsRow
@@ -77,6 +88,13 @@ export default function DevScreen() {
           subtitle={status.seeded ? 'Ya está poblado' : 'Tarda unos segundos'}
           onPress={busy || status.seeded ? undefined : seed}
           disabled={busy || status.seeded}
+        />
+        <SettingsRow
+          emoji="🔄"
+          title="Actualizar precios ahora"
+          subtitle="Pide cotizaciones reales para las posiciones"
+          onPress={busy ? undefined : prices}
+          disabled={busy}
         />
         <SettingsRow
           emoji="🧹"
