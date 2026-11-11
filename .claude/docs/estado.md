@@ -6,16 +6,25 @@ Actualizar al cerrar cada tarea: qué se hizo, en qué rama/PR y qué quedó pen
 
 | Bloque | Contenido | Estado | Rama / PR |
 |---|---|---|---|
-| B | Auditoría (15 puntos de `plan.md` B), migración v3, tests, lint y CI | ✅ Hecho, falta probar en el A34 | `bloque-b-auditoria` (subida, sin PR) |
-| C | Cuentas reales con grupos, vista general/agrupada, activos/pasivos, transferencias (migración v4) | ✅ Hecho, falta probar en el A34 | `bloque-c-cuentas` (subida, sin PR) |
+| B | Auditoría (15 puntos de `plan.md` B), migración v3, tests, lint y CI | ✅ Hecho, falta probar en el A34 | en `main` (PR #3) |
+| C | Cuentas reales con grupos, vista general/agrupada, activos/pasivos, transferencias (migración v4) | ✅ Hecho, falta probar en el A34 | en `main` (PR #4) |
 | A | Identidad (solo piel): acento lila/azul, Figtree + Bricolage, sin componentes nativos, sin hora en movimientos, Apariencia | Diseñado, **siguiente** | — |
-| D | Inversiones XTB: importador + precios gratis + gráfico (migración v5) | Diseñado, falta reporte real de XTB | — |
-| E | Botón de datos de prueba (solo `__DEV__`) | ✅ Primera versión (sin inversiones); crece con D | `bloque-c-cuentas` |
+| D | Inversiones: operaciones, precios gratis, gráfico (migración v5) | ✅ Hecho salvo el importador de XTB (falta el reporte real); falta probar en el A34 | `bloque-d-inversiones` (subida, sin PR) |
+| E | Botón de datos de prueba (solo `__DEV__`) | ✅ Con cuentas e inversiones | `bloque-d-inversiones` |
 
 ## Pendiente de Daniel
 
 - Confirmar el nombre "Cauce" y el logo (o elegir otro).
-- Mandar un reporte real exportado de XTB (xStation → Historial de cuenta → Exportar) para escribir el parser.
+- **Mandar un reporte real exportado de XTB** (xStation → Historial de cuenta → Exportar) para escribir el
+  importador: es lo único que falta del bloque D.
+- **Bloque D en el A34** (exportar un respaldo JSON antes):
+  - Poblar datos de prueba y abrir XTB desde el panel de cuentas: valor, Hoy, Total, los cinco rangos del gráfico.
+  - Deslizar hacia abajo para actualizar; ponerlo en modo avión y ver que queda el último precio.
+  - Registrar una compra buscando un símbolo; registrar una venta; intentar vender de más (debe negarse).
+  - Mirar que "Tu dinero hoy" incluya XTB en pesos y diga la TRM usada.
+  - Los arreglos: presupuesto desde la barra del inicio en una categoría que no elegiste en la bienvenida, que
+    Presupuestos liste todas, y los colores de la vista agrupada.
+- Abrir los PR de `arreglos-presupuestos-cuentas` → `main` y `bloque-d-inversiones` encima.
 - Probar en el A34: deslizar entre paneles, huella, cursor del monto, espacio del teclado, voz con clave real.
 - **Bloque B en el A34** (exportar un respaldo JSON antes):
   - Abrir la rama en Expo Go: debe entrar directo al inicio, con los mismos movimientos, categorías y colores.
@@ -33,33 +42,49 @@ Actualizar al cerrar cada tarea: qué se hizo, en qué rama/PR y qué quedó pen
   - Por texto: "retiré 80 mil de Davivienda", "pagué la tarjeta con Davivienda 300 mil", "taxi 12 mil con Nequi".
   - Con letra grande del sistema: el segmento Gasto / Ingreso / Transferir puede quedar apretado junto a los botones.
   - "Borrar datos de prueba" y confirmar que todo vuelve a como estaba.
-- Abrir los PR en GitHub (no hay `gh` en el PC), en cadena: `rediseno-v2-seguridad` → `main`,
-  `bloque-b-auditoria` → `rediseno-v2-seguridad` y `bloque-c-cuentas` → `bloque-b-auditoria`.
-  Después de fusionar, etiquetar la versión (propuesta: `v0.2.0`).
 
 ## Bitácora
 
-### 2026-11-10 · Bloque D (inversiones) EN CURSO, rama `bloque-d-inversiones` (local, sin push)
+### 2026-11-11 · Bloque D (inversiones), rama `bloque-d-inversiones`
 
-Sale de `arreglos-presupuestos-cuentas` (subida, sin PR: categorías ocultas con movimientos, colores de la vista
-agrupada, texto del umbral).
+Sale de `arreglos-presupuestos-cuentas`. Verificación: `tsc` limpio, lint sin errores (69 avisos), 217 tests en verde,
+`expo-doctor` 20/20 y el bundle de Android compila. Además se corrió una vez la cadena real contra Yahoo desde el PC
+(cotizaciones, 129 días de histórico, TRM, intradía y búsqueda). **No se probó en el celular.**
 
-Hecho y probado (202 tests en verde, `tsc` limpio):
-- Migración **v5** (`instruments`, `trades`, `quotes`, `price_history`, `fx_rates`), probada desde v1 y v4 con datos.
-- `src/lib/portfolio.ts`: lotes FIFO, valor, ganancia, serie del gráfico, conversión de moneda (todo en enteros).
-- `src/db/investments.ts`: instrumentos, `saveTrade` / `deleteTrade` (no deja vender lo que no hay), `importTrades`
-  (sin duplicar por `source_ref`), caché de cotizaciones, histórico y TRM, `getPortfolio`, `listValuedAccounts`.
-- El saldo libre del bróker ya cuenta compras y ventas; `summarizeAccounts` suma el bróker en pesos si hay TRM.
-- `react-native-svg` instalado (viene en Expo Go). Respuestas reales de Yahoo guardadas en `src/prices/__fixtures__/`.
+Qué quedó:
+- **Migración v5:** `instruments`, `trades`, `quotes`, `price_history`, `fx_rates`. Probada desde v1 y desde v4 con datos.
+- **Operaciones:** compra y venta a mano con símbolo (búsqueda en Yahoo), cantidad, precio, comisión y día y hora de
+  la orden. Lotes FIFO, ganancia realizada, y no deja vender ni borrar lo que rompa una venta posterior.
+- **Precios gratis:** Yahoo sin clave; Finnhub y Twelve Data como respaldo opcional con clave propia (pantalla
+  Precios). Refresco al abrir, al deslizar hacia abajo, cada 15 min y al volver a la app. Sin red queda el último precio.
+- **Pantalla Inversiones:** valor (efectivo + posiciones), ≈ en pesos, Hoy y Total, gráfico Día / Semana / Mes / Año /
+  Todo, posiciones, saldo libre y lista de operaciones.
+- **Panel de cuentas:** el bróker vale efectivo + posiciones, entra en "Tu dinero hoy" con la TRM guardada, muestra
+  la TRM usada y al tocarlo abre Inversiones.
+- **Respaldo formato 4** con instrumentos y operaciones (los precios no viajan). Formatos 1 a 3 siguen entrando.
+- **Datos de prueba:** VOO, NVDA (vendida en parte), MSFT y KO en XTB, y el botón "Actualizar precios ahora".
+- Dependencias de Expo alineadas otra vez con el SDK 58 (salieron parches nuevos el 11 nov); `react-native-svg` nuevo.
 
-Falta:
-- `src/prices/`: `PriceProvider` con Yahoo (verificado que responde: `/v8/finance/chart/{symbol}`, `COP=X`,
-  `/v1/finance/search`), Finnhub y Twelve Data de respaldo, claves en SecureStore, refresco cada 15 min.
-- Pantallas `app/investments.tsx`, `app/trade.tsx`, gráfico Día/Semana/Mes/Año/Todo, y que el panel de cuentas use
-  `listValuedAccounts` y abra Inversiones al tocar el bróker.
-- Respaldo formato 4 (instrumentos y operaciones), posiciones en los datos de prueba y "Actualizar precios ahora".
-- `app/import-xtb.tsx`: **bloqueado hasta tener un reporte real de XTB** (pedírselo a Daniel).
-- `/verificar`, docs (`CLAUDE.md`, `plan.md`, README) y push.
+Falta del bloque:
+- **Importador de XTB** (`app/import-xtb.tsx` y su parser): bloqueado hasta tener un reporte real de xStation.
+  `importTrades` ya existe y no duplica por `source_ref`; solo falta leer el archivo.
+
+Decisiones y diferencias frente a `plan.md` D:
+- `trades` guarda `gross_minor` (cantidad × precio ya redondeado) para que el saldo libre se sume en SQL sin decimales.
+- El valor del bróker **incluye el saldo libre**; el gráfico dibuja solo las posiciones (como dice el plan).
+- Día y Semana se piden en vivo y no se guardan; sin conexión esos dos rangos no dibujan.
+- La fecha de la orden usa todavía el selector nativo de Android (día y luego hora); el bloque A lo reemplaza.
+
+Deuda que queda anotada:
+- **Un instrumento debe cotizar en la moneda de la cuenta** (USD en XTB). Acciones europeas en euros no se pueden
+  registrar todavía.
+- **Finnhub y Twelve Data no se probaron contra el servicio real** (no hay clave): están escritos según su
+  documentación y probados con respuestas de esa forma.
+- En Yahoo la búsqueda no dice la moneda; se confirma con la cotización al elegir. Sin red se puede escribir el
+  símbolo "tal cual" y queda en la moneda de la cuenta.
+- El gráfico no descuenta depósitos: un salto en la línea puede ser una compra, no una ganancia.
+- La TRM es la de Yahoo (`COP=X`), no la oficial del Banco de la República; se guarda una por día.
+- "Cuadrar saldo" en el bróker ajusta el saldo libre.
 
 ### 2026-11-10 · Ramas subidas
 - Daniel le dio el permiso `workflow` al token: subieron el commit del CI de `bloque-b-auditoria` y la rama

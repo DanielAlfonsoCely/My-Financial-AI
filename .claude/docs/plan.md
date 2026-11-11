@@ -220,7 +220,12 @@ UI de movimientos:
 
 ---
 
-## D. Inversiones
+## D. Inversiones ✅ salvo el importador (11 nov 2026, rama `bloque-d-inversiones`)
+
+Hecho: modelo (migración v5), operaciones a mano, precios gratis con respaldo, gráfico, pantallas, respaldo y datos
+de prueba. **Falta `app/import-xtb.tsx`**: sigue esperando un reporte real de XTB. Diferencias frente a lo escrito
+abajo en `docs/estado.md` (la principal: `trades` lleva además `gross_minor`, y por ahora el instrumento debe cotizar
+en la moneda de la cuenta).
 
 ### Viabilidad (costo cero)
 

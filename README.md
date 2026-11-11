@@ -39,6 +39,8 @@ APK propio con un *development build* (`eas build --profile development --platfo
 - **Respaldo:** exportar a JSON e importar sin duplicar (gana la versión más reciente de cada fila), y exportar CSV.
 - **Cuentas:** efectivo, bancos, tarjetas e inversiones, con grupos, vista general o agrupada, activos y pasivos.
   Pasar plata entre cuentas es una transferencia: una sola fila que no cuenta como gasto ni ingreso.
+- **Inversiones:** compras y ventas en una cuenta de bróker, con precios gratis (Yahoo Finance, con retraso), valor
+  en dólares y en pesos, ganancia del día y total, y gráfico por día, semana, mes, año o todo.
 - **Datos de prueba** (solo en desarrollo): Configuración → Desarrollo pobla la app con datos inventados y los quita.
 
 ## Estructura
@@ -48,6 +50,7 @@ app/                 Pantallas (expo-router)
 src/
   db/                Esquema, migraciones, categorías iniciales y consultas (repo.ts)
   ai/                Gemini, parser local, sugerencia de categorías
+  prices/            Servicios de precios (Yahoo y respaldos) y su caché
   hooks/             Datos para las pantallas
   components/        Piezas de UI reutilizables
   lib/               Dinero (COP), fechas, períodos, respaldo, CSV, seguridad, eventos
@@ -91,7 +94,7 @@ El plan detallado y el estado están en `.claude/docs/plan.md` y `.claude/docs/e
 | Fases 2 y 4 | Voz e IA, chat, presupuestos, categorías, etiquetas, recurrentes, listas | Hecho |
 | B | Auditoría: correcciones de datos, seguridad y pruebas | Hecho |
 | C | Cuentas reales con grupos y transferencias | Hecho |
+| D | Inversiones | Hecho, falta importar el reporte de XTB |
 | A | Identidad visual propia | Siguiente |
-| D | Inversiones (XTB) | Diseñado |
 | Fase 3 | Notificaciones y SMS con de-duplicación | Futuro |
 | Fase 5 | Widget, OCR de recibos | Futuro |
