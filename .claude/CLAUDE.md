@@ -20,8 +20,8 @@ componentes nativos). No usa marca, logo ni assets de MonAi.
 
 - **Expo SDK 58** (React Native 0.88, React 19.3), TypeScript estricto, **expo-router**.
 - **SQLite local** con `expo-sqlite` y SQL directo (sin ORM). Migraciones con `PRAGMA user_version` en
-  `src/db/migrations.ts`: **nunca se edita una migración existente**, siempre se agrega una nueva. Va en la **v3**
-  (v4 será cuentas, v5 inversiones).
+  `src/db/migrations.ts`: **nunca se edita una migración existente**, siempre se agrega una nueva. Va en la **v4**
+  (v3 onboarding, v4 cuentas y transferencias; v5 será inversiones).
 - **Pruebas:** `jest-expo` (`npm test`), ESLint (`npm run lint`) y CI en GitHub Actions. La capa de datos se prueba
   contra SQLite real en memoria con `src/test/sqlite.ts` (`openTestDatabase()`), sin simular consultas.
 - Fuente actual Nunito (se cambia a Figtree + Bricolage Grotesque en el bloque A). Íconos: Feather (`@expo/vector-icons`).
@@ -43,7 +43,9 @@ Ver `docs/estado.md` (se actualiza al cerrar cada tarea). Resumen al 10 nov 2026
   hardcodeada**, migración v2 (listas, etiquetas, recurrentes, presupuestos, reglas de IA), onboarding, búsqueda,
   hoja de movimiento, voz y chat con Gemini, CSV.
 - **`bloque-b-auditoria`** (sale de la anterior, sin PR): bloque B completo, migración v3, tests, lint y CI.
-- Siguiente: bloque A de `docs/plan.md`, en una rama nueva desde `bloque-b-auditoria`.
+- **`bloque-c-cuentas`** (sale de la anterior, sin PR ni push): bloque C completo (cuentas reales, grupos,
+  transferencias, migración v4, respaldo formato 3) y la primera versión de los datos de prueba (E).
+- Siguiente: bloque A de `docs/plan.md` (se saltó a pedido de Daniel), en una rama nueva desde `bloque-c-cuentas`.
 - Pendiente de probar en el A34: deslizar entre paneles, huella, cursor del monto, espacio del teclado, voz con clave
   real, MIME `audio/m4a` en la Interactions API.
 
@@ -52,7 +54,10 @@ Ver `docs/estado.md` (se actualiza al cerrar cada tarea). Resumen al 10 nov 2026
 ```
 app/_layout.tsx        Fuentes, LockProvider, SQLiteProvider (finanzas.db, onInit=migrateDatabase), Stack, ToastHost
 app/index.tsx          Inicio v2 (Pager: panel principal + panel de cuentas a la derecha)
-app/transaction.tsx    Hoja crear/editar movimiento (?id=, ?kind=, ?categoryId=)
+app/transaction.tsx    Hoja crear/editar movimiento (?id=, ?kind=expense|income|transfer, ?categoryId=, ?accountId=)
+app/account.tsx        Crear o abrir una cuenta: saldo, cuadrar saldo, datos, últimos movimientos (?id=, ?groupId=, ?type=)
+app/account-group.tsx  Crear, renombrar, ordenar o eliminar un grupo de cuentas
+app/dev.tsx            Datos de prueba (solo `__DEV__`)
 app/voice.tsx          Grabación y resumen de movimientos dictados
 app/chat.tsx           Chat financiero
 app/settings.tsx       Configuración (SettingsRow) y respaldo
@@ -63,18 +68,21 @@ app/tags.tsx · recurring.tsx · lists.tsx · list-edit.tsx
 app/ai-rules.tsx       Mejoras de IA (correcciones recordadas)
 app/ai.tsx             Clave y modelo de Gemini
 app/security.tsx       PIN, huella y tiempo de bloqueo
-src/db/                types, migrations (v1–v3), seed (15 categorías cat-*, lista list-personal), repo (consultas,
-                       cola de escrituras, saveTransaction, budgetAlertFor, loadCategoryChoices)
-src/ai/                gemini (cliente REST), pipeline, localParser, categorizer, emoji, config (SecureStore)
+src/db/                types, migrations (v1–v4), seed (15 categorías cat-*, lista list-personal), repo (consultas,
+                       cola de escrituras, saveTransaction, budgetAlertFor, loadCategoryChoices, cuentas, grupos y saldos)
+src/ai/                gemini (cliente REST), pipeline, localParser, accountMatcher (cuentas y transferencias en una
+                       frase), categorizer, emoji, config (SecureStore)
 src/hooks/             useData (useQuery con error/reload, useCurrentList), useHomeData, useKeyboardInset, useToday,
                        useCheckpointOnBackground
 src/security/LockProvider.tsx
 src/components/        AppText, CategoryBars, TransactionRow, AmountInput, NumPad, PinPad, Sheet, PopoverMenu,
                        Pager, SettingsRow, ScreenHeader, PillButton, CategoryChips, CategoryGrid, TagEditor,
-                       ThresholdSlider, ToastHost, IconButton, LoadError
+                       ThresholdSlider, ToastHost, IconButton, LoadError, AccountChips
 src/components/home/   PeriodStrip, RangeSheet, DefaultPeriodSheet, SearchBar
-src/components/accounts/AccountsPanel.tsx   MAQUETA (datos de src/lib/mockAccounts.ts)
-src/lib/               money, dates, period, recurrence, tags, text, csv, backup, security, events, toast, budgetAlert
+src/components/accounts/AccountsPanel.tsx   Panel de cuentas real (general/agrupada, activos y pasivos)
+src/lib/               money, dates, period, recurrence, tags, text, csv, backup, security, events, toast, budgetAlert,
+                       accounts (resumen, grupos, efecto de un movimiento en un saldo)
+src/dev/seed.ts        Poblar y borrar datos de prueba (tabla `dev_seed`)
 src/test/              setup (mocks de módulos nativos), sqlite (expo-sqlite sobre node:sqlite para tests)
 src/theme.ts           Colores, paleta pastel de categorías, fuentes, radios
 ```
@@ -90,6 +98,13 @@ src/theme.ts           Colores, paleta pastel de categorías, fuentes, radios
   otra función de escritura exportada (se quedaría esperándose a sí misma). Guardar un movimiento = `saveTransaction`.
 - **Listas:** cada lista es independiente, con sus categorías, etiquetas, presupuestos y reglas de IA.
   **Cuentas: globales**, no por lista (decidido 10 nov).
+- **Cuentas:** el saldo nunca se guarda; sale de `opening_balance` y los movimientos (`listAccounts`). En una tarjeta
+  (`credit`) el saldo es deuda. "Cuadrar saldo" ajusta `opening_balance`, no crea movimientos. Una tarjeta nunca va en
+  un grupo; `broker` y `asset` siempre van en el grupo fijo Inversiones (`group-investments`).
+- **Transferencias:** una fila con `kind='transfer'`, `account_id` y `to_account_id` (`to_amount` solo entre monedas),
+  sin categoría y sin repetición. `Kind` es solo gasto/ingreso (categorías, recurrentes); un movimiento usa
+  `TransactionKind`. Todo lo que suma gastos o ingresos debe saltarse las transferencias.
+- Los totales en pesos nunca suman cuentas ni movimientos en otra moneda.
 - Etiquetas en minúscula y sin espacios ("ropa de verano" → `#ropadeverano`), guardadas como JSON en `transactions.tags`.
 
 ## Seguridad (hecho)
@@ -116,7 +131,8 @@ src/theme.ts           Colores, paleta pastel de categorías, fuentes, radios
 - La IA va detrás de una capa intercambiable (`pipeline.ts`).
 - **Privacidad:** Daniel acepta que Gemini vea frases como "gasté X en café". **Nunca** se envían números de cuenta o
   tarjeta, **saldos**, nombres de personas ni el texto crudo de notificaciones (de una notificación solo monto,
-  comercio y fecha). Con cuentas: el prompt de voz puede llevar solo los **nombres** de las cuentas para elegir una.
+  comercio y fecha). Con cuentas: el prompt de voz lleva solo los **nombres** y el tipo de las cuentas para elegir
+  una; el chat no recibe nada de cuentas ni las transferencias. Hay tests que lo cubren (`pipeline.test.ts`).
 - **API keys** nunca en el código ni en el repo (`.env.local` está ignorado). Daniel no las pega en el chat.
 
 ## Diseño
@@ -168,15 +184,15 @@ para **cómo funciona** cada pantalla. Para **cómo se ve**, gana el plan y el m
 | Fase 1 | Base, SQLite, inicio, entrada manual, respaldo JSON | ✅ en `main` |
 | Fases 2 y 4 | Voz + IA, chat, presupuestos, categorías, etiquetas, recurrentes, listas, acumulado | ✅ en `rediseno-v2-seguridad` (falta probar en el A34) |
 | B | Auditoría: 15 puntos (migración v3, cola de escrituras, tests, lint, CI) | ✅ en `bloque-b-auditoria` (falta probar en el A34) |
+| C | Cuentas reales: grupos, vistas, activos/pasivos, transferencias (migración v4) | ✅ en `bloque-c-cuentas` (falta probar en el A34) |
 | A | Identidad (solo piel) | Diseñado, **siguiente** |
-| C | Cuentas reales: grupos, vistas, activos/pasivos, transferencias (migración v4) | Diseñado |
 | D | Inversiones XTB (migración v5) | Diseñado, falta reporte |
-| E | Datos de prueba (dev) | Diseñado, crece con cada bloque |
+| E | Datos de prueba (dev) | ✅ primera versión en `bloque-c-cuentas`; crece con D |
 | Fase 3 | Notificaciones y SMS (Wallet, Davivienda, Nu, Nequi), automático o con confirmación, de-duplicación | Futuro |
 | Fase 5 | Widget, OCR de recibos (ML Kit), "Compartir con la app" | Futuro |
 | Futuro | Correos, sincronización (Supabase), listas compartidas, multimoneda | — |
 
-Orden: una rama y un PR por bloque, B (hecho) → A → C → D (E va dentro de cada uno).
+Orden: una rama y un PR por bloque, B (hecho) → C (hecho) → A → D (E va dentro de cada uno).
 
 ### De-duplicación (Fase 3, requisito clave)
 
