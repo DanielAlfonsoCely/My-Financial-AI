@@ -276,3 +276,25 @@ describe('resumen del panel', () => {
     expect(sections.flatMap((s) => s.accounts).some((a) => a.type === 'credit')).toBe(false);
   });
 });
+
+describe('saldo resultante en la hoja de movimiento', () => {
+  const { balanceAfter } = jest.requireActual('../../lib/accounts') as typeof import('../../lib/accounts');
+
+  test('transferencia nueva y transferencia editada', async () => {
+    const { db, davivienda, efectivo, tarjeta } = await setup();
+    const accounts = await listAccounts(db);
+    const of = (id: string) => accounts.find((a) => a.id === id)!;
+    const next = { kind: 'transfer' as const, amount: 80_000, account_id: davivienda, to_account_id: efectivo, to_amount: null };
+    expect(balanceAfter(of(davivienda), next, null)).toBe(1_920_000);
+    expect(balanceAfter(of(efectivo), next, null)).toBe(180_000);
+    // Paying the card lowers the debt.
+    expect(balanceAfter(of(tarjeta), { ...next, to_account_id: tarjeta }, null)).toBe(220_000);
+
+    // Editing: the saved 80.000 is already inside the balances; raising it to 100.000 moves 20.000 more.
+    await createTransaction(db, LIST, movement('transfer', 80_000, { account_id: davivienda, to_account_id: efectivo }));
+    const saved = await listAccounts(db);
+    const edited = { ...next, amount: 100_000 };
+    expect(balanceAfter(saved.find((a) => a.id === davivienda)!, edited, next)).toBe(1_900_000);
+    expect(balanceAfter(saved.find((a) => a.id === efectivo)!, edited, next)).toBe(200_000);
+  });
+});

@@ -78,6 +78,7 @@ export default function RootLayout() {
             <Stack.Screen name="lists" />
             <Stack.Screen name="ai-rules" />
             <Stack.Screen name="ai" />
+            <Stack.Screen name="dev" />
           </Stack>
           <ToastHost />
         </SQLiteProvider>

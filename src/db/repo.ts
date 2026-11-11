@@ -52,8 +52,12 @@ export function enqueueWrite<T>(task: () => Promise<T>): Promise<T> {
   return run;
 }
 
-/** A queued write made of several statements: all of them are saved, or none. */
-function writeTx<T>(db: SQLiteDatabase, task: () => Promise<T>): Promise<T> {
+/**
+ * A queued write made of several statements: all of them are saved, or none.
+ * Exported only for maintenance code outside the repo (the development seed); screens use the
+ * functions below.
+ */
+export function writeTx<T>(db: SQLiteDatabase, task: () => Promise<T>): Promise<T> {
   return enqueueWrite(async () => {
     let result!: T;
     await db.withTransactionAsync(async () => {

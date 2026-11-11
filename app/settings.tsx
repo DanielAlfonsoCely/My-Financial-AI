@@ -136,6 +136,10 @@ export default function SettingsScreen() {
             // The setting is left alone: closing the app halfway must not force the welcome again.
             onPress={() => router.replace({ pathname: '/onboarding', params: { replay: '1' } })}
           />
+          {/* Only while developing: it never shows in the installed APK. */}
+          {__DEV__ && (
+            <SettingsRow emoji="🧪" title="Desarrollo" subtitle="Datos de prueba" onPress={() => router.push('/dev')} />
+          )}
         </Section>
 
         <AppText size={12} color={colors.textMuted} style={styles.footer}>
