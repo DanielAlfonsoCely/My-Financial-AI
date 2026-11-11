@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Cauce: inversiones</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#1D1B26;text-decoration:none}a:hover{color:#5A43B5}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #F7F6FA; color: #1D1B26; font-family: 'Figtree', system-ui, sans-serif; position: relative; overflow: hidden; padding: 52px 20px 20px; display: flex; flex-direction: column; gap: 12px;">
+
+<div style="display: flex; align-items: center; justify-content: space-between; height: 44px">
+<div style="display: flex; align-items: center; gap: 2px"><a href="Cuentas.dc.html" aria-label="Volver a Cuentas" style="width: 44px; height: 44px; border: 0; border-radius: 22px; background: transparent; color: #1D1B26; display: flex; align-items: center; justify-content: center; flex: none"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"></path></svg></a><div style="font-family: 'Bricolage Grotesque', system-ui, sans-serif; font-weight: 700; font-size: 22px; letter-spacing: -0.5px">Inversiones</div></div>
+<div style="display: flex; gap: 8px"><button type="button" aria-label="Importar reporte de XTB" style="width: 44px; height: 44px; border: 0; border-radius: 22px; background: #FFFFFF; color: #1D1B26; display: flex; align-items: center; justify-content: center; flex: none"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M8 11l4 4 4-4M5 15v3a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3"></path></svg></button><a href="Operacion.dc.html" aria-label="Registrar operación" style="width: 44px; height: 44px; border-radius: 22px; background: {{accent}}; color: #1D1B26; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></a></div>
+</div>
+<div style="display: flex; flex-direction: column; align-items: center; gap: 6px">
+<div style="font-size: 13px; color: #625E73">XTB · valor del portafolio</div>
+<div style="display: flex; align-items: baseline; gap: 6px"><div style="font-size: 18px; font-weight: 700; color: #625E73">US$</div><div style="font-family: 'Bricolage Grotesque', system-ui, sans-serif; font-weight: 700; font-size: 50px; line-height: 1; letter-spacing: -2px; font-variant-numeric: tabular-nums">412,36</div></div>
+<div style="font-size: 14px; color: #625E73; font-variant-numeric: tabular-nums">≈ $1.690.676 COP</div>
+<div style="display: flex; gap: 8px; margin-top: 2px">
+<div style="height: 28px; padding: 0 10px; border-radius: 14px; background: #D3EFE2; color: #17624F; font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 4px; font-variant-numeric: tabular-nums"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"></path></svg>Hoy +3,12 · 0,76%</div>
+<div style="height: 28px; padding: 0 10px; border-radius: 14px; background: #FFFFFF; font-size: 13px; font-weight: 600; display: flex; align-items: center; font-variant-numeric: tabular-nums">Total +9,58 · 2,38%</div>
+</div>
+</div>
+<svg width="350" height="104" viewBox="0 0 350 104" fill="none" role="img" aria-label="Valor del portafolio en el último mes, al alza" style="display: block; overflow: visible; flex: none">
+<path d="M0 78 L25 72 L50 76 L75 64 L100 68 L125 56 L150 60 L175 48 L200 54 L225 42 L250 46 L275 34 L300 38 L325 26 L346 22 L346 104 L0 104 Z" fill="{{accentSoft}}"></path>
+<path d="M0 78 L25 72 L50 76 L75 64 L100 68 L125 56 L150 60 L175 48 L200 54 L225 42 L250 46 L275 34 L300 38 L325 26 L346 22" stroke="{{accentDeep}}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
+<circle cx="346" cy="22" r="5" fill="{{accentDeep}}" stroke="#F7F6FA" stroke-width="2.5"></circle>
+</svg>
+<div style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; height: 44px; flex: none"><button type="button" style="border: 0; border-radius: 16px; background: transparent; color: #625E73; font-family: inherit; font-size: 13px; font-weight: 600">Día</button><button type="button" style="border: 0; border-radius: 16px; background: transparent; color: #625E73; font-family: inherit; font-size: 13px; font-weight: 600">Semana</button><button type="button" aria-pressed="true" style="border: 0; border-radius: 16px; background: #1D1B26; color: #FFFFFF; font-family: inherit; font-size: 13px; font-weight: 700">Mes</button><button type="button" style="border: 0; border-radius: 16px; background: transparent; color: #625E73; font-family: inherit; font-size: 13px; font-weight: 600">Año</button><button type="button" style="border: 0; border-radius: 16px; background: transparent; color: #625E73; font-family: inherit; font-size: 13px; font-weight: 600">Todo</button></div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<div style="display: flex; justify-content: space-between; font-size: 13px; color: #625E73; font-weight: 600"><div>Posiciones</div><div style="font-weight: 500">Precios con 15 min de retraso</div></div>
+<div style="background: #FFFFFF; border-radius: 24px; padding: 2px 14px; display: flex; flex-direction: column">
+<div style="display: flex; align-items: center; gap: 12px; height: 60px">
+<div style="width: 44px; height: 44px; border-radius: 22px; background: #E4EFC7; display: flex; align-items: center; justify-content: center; flex: none; font-size: 11px; font-weight: 700; letter-spacing: 0.3px">VOO</div>
+<div style="flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 2px"><div style="font-size: 16px; font-weight: 600">S&amp;P 500 ETF</div><div style="font-size: 13px; color: #625E73; font-variant-numeric: tabular-nums">0,3512 · compra a 598,20</div></div>
+<div style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-variant-numeric: tabular-nums"><div style="font-size: 16px; font-weight: 700">215,07</div><div style="font-size: 13px; font-weight: 700; color: #1F7F68">+2,37%</div></div>
+</div><div style="height: 1px; background: #EDEBF3; margin-left: 56px"></div>
+<div style="display: flex; align-items: center; gap: 12px; height: 60px">
+<div style="width: 44px; height: 44px; border-radius: 22px; background: #E5E0F7; display: flex; align-items: center; justify-content: center; flex: none; font-size: 11px; font-weight: 700; letter-spacing: 0.3px">NVDA</div>
+<div style="flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 2px"><div style="font-size: 16px; font-weight: 600">Nvidia</div><div style="font-size: 13px; color: #625E73; font-variant-numeric: tabular-nums">0,6000 · compra a 138,50</div></div>
+<div style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-variant-numeric: tabular-nums"><div style="font-size: 16px; font-weight: 700">87,72</div><div style="font-size: 13px; font-weight: 700; color: #1F7F68">+5,56%</div></div>
+</div><div style="height: 1px; background: #EDEBF3; margin-left: 56px"></div>
+<div style="display: flex; align-items: center; gap: 12px; height: 60px">
+<div style="width: 44px; height: 44px; border-radius: 22px; background: #CFE6F6; display: flex; align-items: center; justify-content: center; flex: none; font-size: 11px; font-weight: 700; letter-spacing: 0.3px">MSFT</div>
+<div style="flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 2px"><div style="font-size: 16px; font-weight: 600">Microsoft</div><div style="font-size: 13px; color: #625E73; font-variant-numeric: tabular-nums">0,1500 · compra a 440,00</div></div>
+<div style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-variant-numeric: tabular-nums"><div style="font-size: 16px; font-weight: 700">64,29</div><div style="font-size: 13px; font-weight: 700; color: #C2395A">−2,59%</div></div>
+</div><div style="height: 1px; background: #EDEBF3; margin-left: 56px"></div>
+<div style="display: flex; align-items: center; gap: 12px; height: 60px">
+<div style="width: 44px; height: 44px; border-radius: 22px; background: #FAD3D7; display: flex; align-items: center; justify-content: center; flex: none; font-size: 11px; font-weight: 700; letter-spacing: 0.3px">KO</div>
+<div style="flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 2px"><div style="font-size: 16px; font-weight: 600">Coca-Cola</div><div style="font-size: 13px; color: #625E73; font-variant-numeric: tabular-nums">0,6800 · compra a 64,10</div></div>
+<div style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-variant-numeric: tabular-nums"><div style="font-size: 16px; font-weight: 700">45,28</div><div style="font-size: 13px; font-weight: 700; color: #1F7F68">+3,88%</div></div>
+</div>
+</div>
+<div style="font-size: 13px; color: #625E73; display: flex; align-items: center; gap: 6px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12a7 7 0 0 1 12-5l2 2M19 5v4h-4M19 12a7 7 0 0 1-12 5l-2-2M5 19v-4h4"></path></svg>Actualizado hace 4 min · TRM $4.100</div>
+</div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"acento":{"editor":"enum","options":["Lila","Azul"],"default":"Lila"},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+renderVals() {
+var azul = (this.props.acento ?? 'Lila') === 'Azul';
+return {
+accent: azul ? '#B8D3FA' : '#CFC0F8',
+accentSoft: azul ? '#E5EFFE' : '#EEE8FD',
+accentDeep: azul ? '#2B5BAA' : '#5A43B5'
+};
+}
+}
+</script>
+</body>
+</html>

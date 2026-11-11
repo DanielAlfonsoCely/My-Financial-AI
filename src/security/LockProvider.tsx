@@ -5,11 +5,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppText } from '../components/AppText';
 import { PinPad } from '../components/PinPad';
 import {
+  applyScreenProtection,
   authenticateWithBiometrics,
-  authenticateWithDevice,
   getBlockedUntil,
   getSecurityConfig,
   isAuthPromptOpen,
+  recoverWithDevice,
   type SecurityConfig,
   verifyPin,
 } from '../lib/security';
@@ -47,6 +48,7 @@ export function LockProvider({ children, onReady }: Props) {
     const next = await getSecurityConfig();
     configRef.current = next;
     setConfig(next);
+    await applyScreenProtection(next);
   }, []);
 
   useEffect(() => {
@@ -54,6 +56,7 @@ export function LockProvider({ children, onReady }: Props) {
       configRef.current = initial;
       setConfig(initial);
       setLocked(initial.pinEnabled);
+      applyScreenProtection(initial);
       onReady();
     });
     // Only the first load matters here; onReady is not expected to change.
@@ -86,13 +89,20 @@ export function LockProvider({ children, onReady }: Props) {
           // Android back must not dismiss the lock.
         }}
       >
-        {config && <LockScreen config={config} onUnlock={() => setLocked(false)} />}
+        {config && <LockScreen config={config} onUnlock={() => setLocked(false)} onPinCleared={reloadConfig} />}
       </Modal>
     </LockContext.Provider>
   );
 }
 
-function LockScreen({ config, onUnlock }: { config: SecurityConfig; onUnlock: () => void }) {
+interface LockScreenProps {
+  config: SecurityConfig;
+  onUnlock: () => void;
+  /** The stored PIN was unreadable and has been removed after confirming with the phone's lock. */
+  onPinCleared: () => Promise<void>;
+}
+
+function LockScreen({ config, onUnlock, onPinCleared }: LockScreenProps) {
   const insets = useSafeAreaInsets();
   const [error, setError] = useState<string | null>(null);
   const [blockedUntil, setBlockedUntil] = useState(0);
@@ -125,7 +135,9 @@ function LockScreen({ config, onUnlock }: { config: SecurityConfig; onUnlock: ()
       onUnlock();
       return true;
     }
-    if (result.blockedUntil > Date.now()) {
+    if (result.corrupted) {
+      setError('No se pudo leer tu PIN guardado. Toca "¿Olvidaste tu PIN?" para entrar con el bloqueo del celular.');
+    } else if (result.blockedUntil > Date.now()) {
       setBlockedUntil(result.blockedUntil);
       setNow(Date.now());
       setError(null);
@@ -140,7 +152,10 @@ function LockScreen({ config, onUnlock }: { config: SecurityConfig; onUnlock: ()
   };
 
   const forgot = async () => {
-    if (await authenticateWithDevice()) onUnlock();
+    const result = await recoverWithDevice();
+    if (!result.ok) return;
+    if (result.pinCleared) await onPinCleared();
+    onUnlock();
   };
 
   return (

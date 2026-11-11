@@ -39,3 +39,8 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Contexto de Claude Code: las capturas de MonAi y los ajustes locales no se suben
+.claude/design/TikTok/
+.claude/design/Video Yt/
+.claude/settings.local.json

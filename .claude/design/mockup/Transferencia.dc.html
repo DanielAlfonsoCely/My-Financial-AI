@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Cauce: transferencia entre cuentas</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#1D1B26;text-decoration:none}a:hover{color:#5A43B5}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #F7F6FA; color: #1D1B26; font-family: 'Figtree', system-ui, sans-serif; position: relative; overflow: hidden; padding: 52px 20px 20px; display: flex; flex-direction: column; gap: 8px;">
+<div style="display: flex; justify-content: space-between; align-items: center; height: 44px; flex: none"><div style="display: flex; padding: 3px; border-radius: 22px; background: #EDEBF3; flex: none"><button type="button" style="height: 38px; padding: 0 14px; border: 0; border-radius: 19px; background: transparent; color: #625E73; font-family: inherit; font-size: 14px; font-weight: 700">Gasto</button><button type="button" style="height: 38px; padding: 0 14px; border: 0; border-radius: 19px; background: transparent; color: #625E73; font-family: inherit; font-size: 14px; font-weight: 700">Ingreso</button><button type="button" aria-pressed="true" style="height: 38px; padding: 0 14px; border: 0; border-radius: 19px; background: {{accent}}; color: #1D1B26; font-family: inherit; font-size: 14px; font-weight: 700">Transferir</button></div><a href="Inicio.dc.html" aria-label="Cerrar" style="width: 44px; height: 44px; border: 0; border-radius: 22px; background: #FFFFFF; color: #1D1B26; display: flex; align-items: center; justify-content: center; flex: none"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></a></div>
+<div style="flex: 1 1 0; display: flex; flex-direction: column; justify-content: center; gap: 16px">
+<div style="display: flex; gap: 8px"><a href="Calendario.dc.html" style="height: 44px; padding: 0 12px; border: 0; border-radius: 14px; background: #EDEBF3; color: #1D1B26; font-family: inherit; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 4px">hoy <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg></a><button type="button" style="height: 44px; padding: 0 12px; border: 0; border-radius: 14px; background: #EDEBF3; color: #1D1B26; font-family: inherit; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 4px">Una vez <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg></button></div>
+<div style="font-family: 'Bricolage Grotesque', system-ui, sans-serif; font-weight: 700; font-size: 34px; line-height: 1.05; letter-spacing: -1px">Retiro en cajero</div>
+<div style="font-family: 'Bricolage Grotesque', system-ui, sans-serif; font-weight: 700; font-size: 46px; line-height: 1; letter-spacing: -1.5px; font-variant-numeric: tabular-nums">$80.000</div>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; gap: 8px; align-items: center"><div style="width: 58px; font-size: 13px; color: #625E73; font-weight: 600">Sale de</div><button type="button" style="height: 46px; padding: 0 14px; border: 2px solid #1D1B26; border-radius: 23px; background: #FFFFFF; color: #1D1B26; font-family: inherit; font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 8px; flex: none"><span aria-hidden="true">🏦</span>Davivienda</button></div>
+<div style="display: flex; gap: 8px; align-items: center"><div style="width: 58px; font-size: 13px; color: #625E73; font-weight: 600">Entra a</div><button type="button" style="height: 46px; padding: 0 14px; border: 2px solid #1D1B26; border-radius: 23px; background: #FFFFFF; color: #1D1B26; font-family: inherit; font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 8px; flex: none"><span aria-hidden="true">💵</span>Efectivo</button><button type="button" aria-label="Invertir cuentas" style="width: 44px; height: 44px; border: 0; border-radius: 22px; background: #EDEBF3; color: #1D1B26; display: flex; align-items: center; justify-content: center; margin-left: auto"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5v14M4 15l4 4 4-4M16 19V5M12 9l4-4 4 4"></path></svg></button></div>
+<div style="font-size: 13px; color: #625E73; font-variant-numeric: tabular-nums">Davivienda queda en $2.450.000 · Efectivo en $180.000</div>
+</div>
+<div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center"><div style="height: 30px; padding: 0 12px; border-radius: 15px; background: {{accentSoft}}; color: {{accentDeep}}; font-size: 13px; font-weight: 700; display: flex; align-items: center">#cajero</div></div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<button type="button" aria-expanded="true" style="height: 44px; align-self: flex-start; border: 0; background: transparent; padding: 0; font-family: inherit; font-size: 13px; font-weight: 600; color: #625E73; display: flex; align-items: center; gap: 4px">Más información <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6"></path></svg></button>
+<div style="background: #FFFFFF; border-radius: 18px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; font-size: 14px">
+<div style="display: flex; justify-content: space-between"><div style="color: #625E73">Registrado</div><div style="font-weight: 600">hoy, 3:40 p. m.</div></div>
+<div style="display: flex; justify-content: space-between"><div style="color: #625E73">Origen</div><div style="font-weight: 600">Voz</div></div>
+<div style="display: flex; justify-content: space-between"><div style="color: #625E73">En tus totales</div><div style="font-weight: 600">No cuenta como gasto</div></div>
+</div>
+</div>
+</div>
+<div style="display: flex; gap: 10px; flex: none">
+<button type="button" aria-label="Etiquetas" style="width: 56px; height: 56px; border: 1.5px solid #1D1B26; border-radius: 18px; background: transparent; color: #1D1B26; font-family: 'Bricolage Grotesque', system-ui, sans-serif; font-size: 24px; font-weight: 700; flex: none">#</button>
+<a href="Cuentas.dc.html" style="flex: 1 1 0; height: 56px; border-radius: 18px; background: {{accent}}; color: #1D1B26; font-size: 17px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 8px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>Guardar</a>
+</div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"acento":{"editor":"enum","options":["Lila","Azul"],"default":"Lila"},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+renderVals() {
+var azul = (this.props.acento ?? 'Lila') === 'Azul';
+return {
+accent: azul ? '#B8D3FA' : '#CFC0F8',
+accentSoft: azul ? '#E5EFFE' : '#EEE8FD',
+accentDeep: azul ? '#2B5BAA' : '#5A43B5'
+};
+}
+}
+</script>
+</body>
+</html>

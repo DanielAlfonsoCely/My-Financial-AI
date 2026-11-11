@@ -2,6 +2,7 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { useMemo } from 'react';
 
 import {
+  DEFAULT_BUDGET_THRESHOLD,
   getSetting,
   listBudgets,
   listCategories,
@@ -14,6 +15,7 @@ import {
   SETTING_SHOW_INCOME,
 } from '../db/repo';
 import type { Budget, Category, Kind, TransactionAmount, TransactionWithCategory } from '../db/types';
+import { DEFAULT_CURRENCY } from '../lib/money';
 import { clampStartDay } from '../lib/period';
 import { useQuery } from './useData';
 
@@ -38,7 +40,7 @@ export interface HomeSettings {
   loaded: boolean;
 }
 
-export const DEFAULT_BUDGET_THRESHOLD = 85;
+export { DEFAULT_BUDGET_THRESHOLD };
 
 /** Settings that change how the home screen is computed. Refreshes after any write. */
 export function useHomeSettings(): HomeSettings {
@@ -76,6 +78,9 @@ export interface PeriodData {
   /** Every category of the kind, including those with 0, biggest first. */
   byCategory: Record<Kind, CategoryTotal[]>;
   loading: boolean;
+  /** The last read failed. `transactions` keeps what was loaded before, if anything. */
+  error: Error | null;
+  reload: () => void;
 }
 
 const ALL_TIME: [number, number] = [0, Number.MAX_SAFE_INTEGER];
@@ -87,7 +92,7 @@ const ALL_TIME: [number, number] = [0, Number.MAX_SAFE_INTEGER];
 export function usePeriodData(listId: string, range: [number, number] | null, withBudgets: boolean): PeriodData {
   const db = useSQLiteContext();
   const [start, end] = range ?? ALL_TIME;
-  const { data, loaded } = useQuery(
+  const { data, loaded, error, reload } = useQuery(
     async () => {
       const [rows, cats, budgets] = await Promise.all([
         listTransactionsInRange(db, listId, start, end),
@@ -119,6 +124,11 @@ export function usePeriodData(listId: string, range: [number, number] | null, wi
     }
 
     for (const t of data.rows) {
+      // Totals are in one currency. A movement in another one stays in the list but is never
+      // added to pesos (investments in USD will live in their own tables).
+      if (t.currency !== DEFAULT_CURRENCY) continue;
+      // A transfer between own accounts is neither an expense nor an income.
+      if (t.kind === 'transfer') continue;
       if (t.kind === 'income') incomeTotal += t.amount;
       else expenseTotal += t.amount;
 
@@ -146,8 +156,17 @@ export function usePeriodData(listId: string, range: [number, number] | null, wi
       expense: all.filter((c) => c.kind === 'expense'),
       income: all.filter((c) => c.kind === 'income'),
     };
-    return { transactions: data.rows, categories: data.cats, expenseTotal, incomeTotal, byCategory, loading: !loaded };
-  }, [data, loaded, withBudgets]);
+    return {
+      transactions: data.rows,
+      categories: data.cats,
+      expenseTotal,
+      incomeTotal,
+      byCategory,
+      loading: !loaded && !error,
+      error,
+      reload,
+    };
+  }, [data, loaded, error, reload, withBudgets]);
 }
 
 /** Amount and date of every transaction of the list, for the strips and "Acumulado". */
@@ -156,14 +175,15 @@ export function useAmountIndex(listId: string): TransactionAmount[] {
   return useQuery(() => listTransactionAmounts(db, listId), [] as TransactionAmount[], [db, listId]).data;
 }
 
-/** Sums rows in [start, end). Balance = income − expenses. */
+/** Sums rows in [start, end), only in the app's currency. Balance = income − expenses. */
 export function sumRange(rows: TransactionAmount[], start: number, end: number) {
   let expense = 0;
   let income = 0;
   for (const r of rows) {
     if (r.occurred_at < start || r.occurred_at >= end) continue;
+    if (r.currency !== DEFAULT_CURRENCY) continue;
     if (r.kind === 'income') income += r.amount;
-    else expense += r.amount;
+    else if (r.kind === 'expense') expense += r.amount;
   }
   return { expense, income, balance: income - expense };
 }

@@ -6,6 +6,7 @@
 
 import * as Crypto from 'expo-crypto';
 import * as LocalAuthentication from 'expo-local-authentication';
+import * as ScreenCapture from 'expo-screen-capture';
 import * as SecureStore from 'expo-secure-store';
 
 export const PIN_LENGTH = 4;
@@ -14,6 +15,7 @@ const KEY_PIN = 'security.pin';
 const KEY_BIOMETRICS = 'security.biometrics';
 const KEY_LOCK_AFTER = 'security.lockAfterMs';
 const KEY_FAILURES = 'security.failures';
+const KEY_HIDE_CONTENT = 'security.hideContent';
 
 /** After this many wrong PINs in a row the keypad is blocked for a while. */
 const MAX_FREE_ATTEMPTS = 5;
@@ -30,6 +32,8 @@ export interface SecurityConfig {
   pinEnabled: boolean;
   biometricsEnabled: boolean;
   lockAfterMs: number;
+  /** With a PIN: block screenshots and blank the app in Android's recent apps. On unless turned off. */
+  hideContent: boolean;
 }
 
 interface StoredPin {
@@ -46,17 +50,39 @@ interface Failures {
 // ---------- Config ----------
 
 export async function getSecurityConfig(): Promise<SecurityConfig> {
-  const [pin, bio, lockAfter] = await Promise.all([
+  const [pin, bio, lockAfter, hide] = await Promise.all([
     SecureStore.getItemAsync(KEY_PIN),
     SecureStore.getItemAsync(KEY_BIOMETRICS),
     SecureStore.getItemAsync(KEY_LOCK_AFTER),
+    SecureStore.getItemAsync(KEY_HIDE_CONTENT),
   ]);
   const parsedLockAfter = Number(lockAfter);
   return {
     pinEnabled: !!pin,
     biometricsEnabled: !!pin && bio === 'true',
     lockAfterMs: lockAfter !== null && Number.isFinite(parsedLockAfter) ? parsedLockAfter : DEFAULT_LOCK_AFTER_MS,
+    hideContent: !!pin && hide !== 'false',
   };
+}
+
+export async function setHideContent(enabled: boolean): Promise<void> {
+  await SecureStore.setItemAsync(KEY_HIDE_CONTENT, String(enabled));
+}
+
+const SCREEN_CAPTURE_KEY = 'app-lock';
+
+/**
+ * The lock only covers the app while it is open. This keeps the data out of screenshots and of the
+ * preview Android shows in recent apps (FLAG_SECURE), when there is a PIN and the option is on.
+ */
+export async function applyScreenProtection(config: SecurityConfig): Promise<void> {
+  try {
+    if (config.pinEnabled && config.hideContent) await ScreenCapture.preventScreenCaptureAsync(SCREEN_CAPTURE_KEY);
+    else await ScreenCapture.allowScreenCaptureAsync(SCREEN_CAPTURE_KEY);
+  } catch (error) {
+    // Not worth blocking the app: the lock itself still works.
+    console.warn('Screen protection failed', error);
+  }
 }
 
 export async function setBiometricsEnabled(enabled: boolean): Promise<void> {
@@ -95,7 +121,23 @@ export async function clearPin(): Promise<void> {
     SecureStore.deleteItemAsync(KEY_PIN),
     SecureStore.deleteItemAsync(KEY_BIOMETRICS),
     SecureStore.deleteItemAsync(KEY_FAILURES),
+    SecureStore.deleteItemAsync(KEY_HIDE_CONTENT),
   ]);
+}
+
+/** The saved PIN, `null` if there is none, or 'corrupt' if what is stored cannot be read. */
+async function readStoredPin(): Promise<StoredPin | 'corrupt' | null> {
+  const raw = await SecureStore.getItemAsync(KEY_PIN);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<StoredPin> | null;
+    if (parsed && typeof parsed.salt === 'string' && typeof parsed.hash === 'string') {
+      return { salt: parsed.salt, hash: parsed.hash };
+    }
+  } catch {
+    // falls through
+  }
+  return 'corrupt';
 }
 
 async function readFailures(): Promise<Failures> {
@@ -121,7 +163,13 @@ export async function getBlockedUntil(): Promise<number> {
 
 export type PinCheck =
   | { ok: true }
-  | { ok: false; blockedUntil: number; attemptsLeft: number };
+  | {
+      ok: false;
+      blockedUntil: number;
+      attemptsLeft: number;
+      /** The stored PIN is unreadable: no PIN can ever match. The way out is recoverWithDevice(). */
+      corrupted?: boolean;
+    };
 
 /**
  * Checks the PIN and counts failures. Wrong attempts are persisted, so killing the app does not
@@ -133,9 +181,11 @@ export async function verifyPin(pin: string): Promise<PinCheck> {
     return { ok: false, blockedUntil: failures.blockedUntil, attemptsLeft: 0 };
   }
 
-  const raw = await SecureStore.getItemAsync(KEY_PIN);
-  if (!raw) return { ok: true };
-  const stored = JSON.parse(raw) as StoredPin;
+  const stored = await readStoredPin();
+  if (!stored) return { ok: true };
+  // Never unlock just because the value is broken, and never crash either (the app would stay
+  // locked for good). It does not count as a wrong attempt.
+  if (stored === 'corrupt') return { ok: false, blockedUntil: 0, attemptsLeft: MAX_FREE_ATTEMPTS, corrupted: true };
 
   if ((await hashPin(pin, stored.salt)) === stored.hash) {
     await resetFailures();
@@ -213,4 +263,18 @@ export async function authenticateWithDevice(): Promise<boolean> {
   );
   if (result.success) await resetFailures();
   return result.success;
+}
+
+/**
+ * "¿Olvidaste tu PIN?": unlocks with the phone's own lock. If the stored PIN turned out to be
+ * unreadable, it is removed after that confirmation (and only then), so the user can create a new
+ * one instead of being asked forever for a PIN that cannot match.
+ */
+export async function recoverWithDevice(): Promise<{ ok: boolean; pinCleared: boolean }> {
+  if (!(await authenticateWithDevice())) return { ok: false, pinCleared: false };
+  if ((await readStoredPin()) === 'corrupt') {
+    await clearPin();
+    return { ok: true, pinCleared: true };
+  }
+  return { ok: true, pinCleared: false };
 }

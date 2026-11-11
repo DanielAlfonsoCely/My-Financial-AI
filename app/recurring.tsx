@@ -4,6 +4,7 @@ import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '../src/components/AppText';
+import { LoadError } from '../src/components/LoadError';
 import { ScreenHeader } from '../src/components/ScreenHeader';
 import { deleteRecurring, listRecurring, type RecurringWithCategory } from '../src/db/repo';
 import { useCurrentList, useQuery } from '../src/hooks/useData';
@@ -25,7 +26,7 @@ export default function RecurringScreen() {
   const db = useSQLiteContext();
   const insets = useSafeAreaInsets();
   const { listId } = useCurrentList();
-  const { data: items } = useQuery(() => listRecurring(db, listId), [] as RecurringWithCategory[], [db, listId]);
+  const { data: items, error, reload } = useQuery(() => listRecurring(db, listId), [] as RecurringWithCategory[], [db, listId]);
 
   const stop = (r: RecurringWithCategory) => {
     Alert.alert('Dejar de repetir', `"${r.title || r.category_name || 'Este movimiento'}" ya no se agregará automáticamente. Los movimientos que ya se crearon se quedan.`, [
@@ -38,7 +39,8 @@ export default function RecurringScreen() {
     <View style={[styles.screen, { paddingTop: insets.top + 8 }]}>
       <ScreenHeader title="Lista de transacciones recurrentes" />
       <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}>
-        {items.length === 0 && (
+        {error && <LoadError onRetry={reload} />}
+        {items.length === 0 && !error && (
           <AppText size={14} color={colors.textMuted} style={styles.empty}>
             Al crear un movimiento, cambia "Una vez" por "Mensualmente" (u otra frecuencia) y aparecerá aquí. La app lo
             agregará sola en cada fecha.

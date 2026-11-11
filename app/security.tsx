@@ -14,6 +14,8 @@ import {
   getBiometricAvailability,
   LOCK_AFTER_OPTIONS,
   setBiometricsEnabled,
+  recoverWithDevice,
+  setHideContent,
   setLockAfter,
   setPin,
   verifyPin,
@@ -68,6 +70,11 @@ export default function SecurityScreen() {
     await reloadConfig();
   };
 
+  const toggleHideContent = async (value: boolean) => {
+    await setHideContent(value);
+    await reloadConfig();
+  };
+
   const chooseLockAfter = async (ms: number) => {
     await setLockAfter(ms);
     await reloadConfig();
@@ -78,6 +85,18 @@ export default function SecurityScreen() {
 
     if (step.kind === 'verify') {
       const result = await verifyPin(pin);
+      if (!result.ok && result.corrupted) {
+        // The saved PIN cannot be read, so no PIN will ever match: the phone's own lock decides.
+        const recovered = await recoverWithDevice();
+        if (recovered.ok) {
+          await reloadConfig();
+          setError(null);
+          setStep(null);
+          return true;
+        }
+        setError('No se pudo leer tu PIN guardado. Confirma con el bloqueo del celular.');
+        return false;
+      }
       if (!result.ok) {
         setError(result.blockedUntil > Date.now() ? 'Demasiados intentos. Espera un momento.' : 'PIN incorrecto');
         return false;
@@ -171,6 +190,21 @@ export default function SecurityScreen() {
                 />
               }
             />
+            {config.pinEnabled && (
+              <SettingsRow
+                emoji="🙈"
+                title="Ocultar en recientes"
+                subtitle="Tapa la app en las apps recientes y bloquea las capturas de pantalla"
+                right={
+                  <Switch
+                    value={config.hideContent}
+                    onValueChange={toggleHideContent}
+                    trackColor={{ true: colors.income, false: colors.border }}
+                    thumbColor={colors.surface}
+                  />
+                }
+              />
+            )}
             {config.pinEnabled && (
               <SettingsRow
                 emoji="🔑"

@@ -42,6 +42,8 @@ import {
 import { parseTags } from '../src/lib/tags';
 import { matchesAllWords } from '../src/lib/text';
 import { colors, radius } from '../src/theme';
+import { LoadError } from '../src/components/LoadError';
+import { useToday } from '../src/hooks/useToday';
 
 interface DaySection {
   title: string;
@@ -49,18 +51,19 @@ interface DaySection {
   data: TransactionWithCategory[];
 }
 
-function groupByDay(transactions: TransactionWithCategory[]): DaySection[] {
+function groupByDay(transactions: TransactionWithCategory[], now: Date): DaySection[] {
   const sections: DaySection[] = [];
   let currentKey = -1;
   for (const t of transactions) {
     const day = startOfDay(new Date(t.occurred_at));
     if (day.getTime() !== currentKey) {
       currentKey = day.getTime();
-      sections.push({ title: dayLabel(day).toLowerCase(), total: 0, data: [] });
+      sections.push({ title: dayLabel(day, now).toLowerCase(), total: 0, data: [] });
     }
     const section = sections[sections.length - 1];
     section.data.push(t);
-    section.total += t.kind === 'income' ? t.amount : -t.amount;
+    // A transfer is listed on its day but is not part of the day's total.
+    if (t.kind !== 'transfer') section.total += t.kind === 'income' ? t.amount : -t.amount;
   }
   return sections;
 }
@@ -75,7 +78,7 @@ function matchesSearch(t: TransactionWithCategory, query: SearchQuery): boolean 
   if (!query.tags.every((tag) => tags.includes(tag))) return false;
   const text = query.text.trim();
   if (!text) return true;
-  return matchesAllWords(`${t.title} ${t.category_name ?? ''} ${tags.join(' ')}`, text);
+  return matchesAllWords(`${t.title} ${t.category_name ?? ''} ${t.account_name ?? ''} ${t.to_account_name ?? ''} ${tags.join(' ')}`, text);
 }
 
 /** Measures a view on screen so a PopoverMenu can open right under it. */
@@ -127,6 +130,8 @@ function HomePage({ width }: { width: number }) {
   const settings = useHomeSettings();
   const { listId, list, lists } = useCurrentList();
   const amounts = useAmountIndex(listId);
+  // Renders again when the day changes, so "este mes", "hoy" and "ayer" never stay on yesterday.
+  const today = useToday();
 
   // null = default period (the current month, starting on the chosen day).
   const [period, setPeriod] = useState<Period | null>(null);
@@ -215,18 +220,20 @@ function HomePage({ width }: { width: number }) {
   };
 
   const sections = useMemo(() => {
-    if (searching) return groupByDay(searchResults);
+    const now = new Date(today);
+    if (searching) return groupByDay(searchResults, now);
     const filtered =
       categoryFilter === undefined
         ? data.transactions
         : data.transactions.filter((t) => t.kind === activeKind && t.category_id === categoryFilter);
-    return groupByDay(filtered);
-  }, [searching, searchResults, data.transactions, categoryFilter, activeKind]);
+    return groupByDay(filtered, now);
+  }, [searching, searchResults, data.transactions, categoryFilter, activeKind, today]);
 
   const strip = useMemo(
     () => buildStrip(period, amounts, settings.startDay, settings.showIncome, changePeriod, () => setRangeOpen(true)),
-    // changePeriod only touches state setters.
-    [period, amounts, settings.startDay, settings.showIncome],
+    // changePeriod only touches state setters. `today`: the strip ends in the current month.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [period, amounts, settings.startDay, settings.showIncome, today],
   );
 
   // ---- Menus ----
@@ -410,8 +417,9 @@ function HomePage({ width }: { width: number }) {
     </View>
   );
 
-  const empty =
-    searching && !data.loading ? (
+  const empty = data.error ? (
+    <LoadError onRetry={data.reload} />
+  ) : searching && !data.loading ? (
       <AppText size={14} color={colors.textMuted} style={styles.emptySearch}>
         No hay movimientos que coincidan en este período.
       </AppText>

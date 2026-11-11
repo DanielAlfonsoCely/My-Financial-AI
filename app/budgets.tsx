@@ -6,6 +6,7 @@ import { Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '../src/components/AppText';
+import { LoadError } from '../src/components/LoadError';
 import { ScreenHeader } from '../src/components/ScreenHeader';
 import { ThresholdSlider } from '../src/components/ThresholdSlider';
 import {
@@ -27,7 +28,8 @@ const RECENT_MS = 90 * 86_400_000;
 /**
  * "Presupuestos" (TikTok/09–10): alerts switch with the threshold slider, then the most used
  * categories ("Recomendaciones") and the rest ("Otras"). Each row opens the budget editor.
- * Alert notifications come with phase 3; for now the threshold is only saved.
+ * The alert is a toast right after saving an expense that crosses the threshold (lib/budgetAlert).
+ * System notifications come with phase 3.
  */
 export default function BudgetsScreen() {
   const db = useSQLiteContext();
@@ -38,7 +40,7 @@ export default function BudgetsScreen() {
 
   useEffect(() => setThreshold(settings.budgetThreshold), [settings.budgetThreshold]);
 
-  const { data } = useQuery(
+  const { data, error, reload } = useQuery(
     async () => {
       const [categories, budgets, usage] = await Promise.all([
         listCategories(db, listId),
@@ -93,6 +95,7 @@ export default function BudgetsScreen() {
     <View style={[styles.screen, { paddingTop: insets.top + 8 }]}>
       <ScreenHeader title="Presupuestos" />
       <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}>
+        {error && <LoadError onRetry={reload} />}
         <View style={styles.alertCard}>
           <View style={styles.alertRow}>
             <AppText size={18}>🔔</AppText>

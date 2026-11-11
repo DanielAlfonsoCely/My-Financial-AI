@@ -9,7 +9,7 @@ import { getApiKey } from '../src/ai/config';
 import { AppText } from '../src/components/AppText';
 import { ScreenHeader } from '../src/components/ScreenHeader';
 import { SettingsRow } from '../src/components/SettingsRow';
-import { setSetting, SETTING_ACCUMULATED, SETTING_ONBOARDING_DONE, SETTING_SHOW_INCOME } from '../src/db/repo';
+import { setSetting, SETTING_ACCUMULATED, SETTING_SHOW_INCOME } from '../src/db/repo';
 import { listLabel, useCurrentList } from '../src/hooks/useData';
 import { useHomeSettings } from '../src/hooks/useHomeData';
 import { exportBackup, pickAndImportBackup } from '../src/lib/backup';
@@ -133,11 +133,13 @@ export default function SettingsScreen() {
             emoji="👋"
             title="Ver la bienvenida otra vez"
             subtitle="Elegir categorías, voz y estilo"
-            onPress={async () => {
-              await setSetting(db, SETTING_ONBOARDING_DONE, 'false');
-              router.replace('/onboarding');
-            }}
+            // The setting is left alone: closing the app halfway must not force the welcome again.
+            onPress={() => router.replace({ pathname: '/onboarding', params: { replay: '1' } })}
           />
+          {/* Only while developing: it never shows in the installed APK. */}
+          {__DEV__ && (
+            <SettingsRow emoji="🧪" title="Desarrollo" subtitle="Datos de prueba" onPress={() => router.push('/dev')} />
+          )}
         </Section>
 
         <AppText size={12} color={colors.textMuted} style={styles.footer}>

@@ -4,6 +4,7 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CategoryGrid } from '../src/components/CategoryGrid';
+import { LoadError } from '../src/components/LoadError';
 import { ScreenHeader } from '../src/components/ScreenHeader';
 import { listCategories } from '../src/db/repo';
 import type { Category } from '../src/db/types';
@@ -18,13 +19,14 @@ export default function CategoriesScreen() {
   const db = useSQLiteContext();
   const insets = useSafeAreaInsets();
   const { listId, list } = useCurrentList();
-  const { data: categories } = useQuery(() => listCategories(db, listId), [] as Category[], [db, listId]);
+  const { data: categories, error, reload } = useQuery(() => listCategories(db, listId), [] as Category[], [db, listId]);
   const sorted = [...categories].sort((a, b) => a.name.localeCompare(b.name, 'es'));
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top + 8 }]}>
       <ScreenHeader title="Elige tus categorías" subtitle={`En tu lista actual "${listLabel(list)}" · toca una para editarla`} />
       <ScrollView contentContainerStyle={{ paddingTop: 12, paddingBottom: insets.bottom + 24 }}>
+        {error && <LoadError onRetry={reload} />}
         <CategoryGrid
           items={sorted.map((c) => ({ key: c.id, emoji: c.emoji, name: c.name, color: c.color, selected: true }))}
           onPress={(id) => router.push({ pathname: '/category', params: { id } })}

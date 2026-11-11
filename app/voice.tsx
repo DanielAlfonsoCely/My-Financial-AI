@@ -21,6 +21,7 @@ import { useKeyboardInset } from '../src/hooks/useKeyboardInset';
 import { onDataChanged } from '../src/lib/events';
 import { formatMoney } from '../src/lib/money';
 import { withSystemDialog } from '../src/lib/security';
+import { checkBudgetAlerts } from '../src/lib/budgetAlert';
 import { showToast } from '../src/lib/toast';
 import { colors, fonts, radius } from '../src/theme';
 
@@ -125,6 +126,12 @@ export default function VoiceScreen() {
   );
 
   const showResult = async (capture: CaptureResult) => {
+    void checkBudgetAlerts(db, capture.created.map((c) => ({ id: c.id })));
+    // Part of what was said could not be saved (a transfer without its accounts): say so after the other toasts.
+    if (capture.warning) {
+      const subtitle = capture.warning;
+      setTimeout(() => showToast({ kind: 'error', title: 'Faltó un movimiento', subtitle }), 6000);
+    }
     // The movements are saved; if the user already left, a toast is enough.
     if (!mounted.current) {
       showToast({ kind: 'success', emoji: '✅', title: `${capture.created.length} movimiento${capture.created.length === 1 ? '' : 's'} agregado${capture.created.length === 1 ? '' : 's'}` });
@@ -134,13 +141,17 @@ export default function VoiceScreen() {
       const m = capture.created[0];
       const saved = await getTransaction(db, m.id);
       if (!mounted.current) return;
-      showToast({
-        kind: 'success',
-        emoji: saved?.category_emoji ?? (m.kind === 'income' ? '💵' : '🧾'),
-        color: saved?.category_color ?? undefined,
-        title: saved?.category_name ?? m.title,
-        chip: `${m.kind === 'income' ? '+' : '-'} ${formatMoney(m.amount)}`,
-      });
+      showToast(
+        m.kind === 'transfer'
+          ? { kind: 'success', emoji: '🔁', title: saved ? `${saved.account_name ?? ''} → ${saved.to_account_name ?? ''}` : m.title, chip: formatMoney(m.amount) }
+          : {
+              kind: 'success',
+              emoji: saved?.category_emoji ?? (m.kind === 'income' ? '💵' : '🧾'),
+              color: saved?.category_color ?? undefined,
+              title: saved?.category_name ?? m.title,
+              chip: `${m.kind === 'income' ? '+' : '-'} ${formatMoney(m.amount)}`,
+            },
+      );
       router.replace({ pathname: '/transaction', params: { id: m.id } });
       return;
     }

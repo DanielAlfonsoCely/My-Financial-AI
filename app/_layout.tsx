@@ -14,12 +14,19 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { migrateDatabase } from '../src/db/migrations';
 import { ToastHost } from '../src/components/ToastHost';
+import { useCheckpointOnBackground } from '../src/hooks/useCheckpointOnBackground';
 import { LockProvider } from '../src/security/LockProvider';
 import { colors } from '../src/theme';
 
 SplashScreen.preventAutoHideAsync();
 
 const DATABASE_NAME = 'finanzas.db';
+
+/** Lives inside SQLiteProvider only to reach the database. Renders nothing. */
+function DatabaseCare() {
+  useCheckpointOnBackground();
+  return null;
+}
 
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
@@ -43,6 +50,7 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <LockProvider onReady={onLockReady}>
         <SQLiteProvider databaseName={DATABASE_NAME} onInit={migrateDatabase}>
+          <DatabaseCare />
           <StatusBar style="dark" />
           <Stack
             screenOptions={{
@@ -60,6 +68,8 @@ export default function RootLayout() {
             <Stack.Screen name="category" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
             <Stack.Screen name="budget" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
             <Stack.Screen name="list-edit" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+            <Stack.Screen name="account" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+            <Stack.Screen name="account-group" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
             <Stack.Screen name="security" />
             <Stack.Screen name="categories" />
             <Stack.Screen name="budgets" />
@@ -68,6 +78,7 @@ export default function RootLayout() {
             <Stack.Screen name="lists" />
             <Stack.Screen name="ai-rules" />
             <Stack.Screen name="ai" />
+            <Stack.Screen name="dev" />
           </Stack>
           <ToastHost />
         </SQLiteProvider>
