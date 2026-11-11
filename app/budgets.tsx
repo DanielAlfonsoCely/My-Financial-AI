@@ -125,7 +125,7 @@ export default function BudgetsScreen() {
                 onCommit={(v) => setSetting(db, SETTING_BUDGET_THRESHOLD, String(v))}
               />
               <AppText size={12} color={colors.textFaint}>
-                Los avisos llegan con la lectura de notificaciones (fase 3).
+                Te aviso al guardar un gasto que haga cruzar este umbral o el 100 %.
               </AppText>
             </>
           )}

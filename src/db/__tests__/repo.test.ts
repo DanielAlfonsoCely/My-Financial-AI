@@ -304,3 +304,39 @@ describe('totales por moneda', () => {
     expect(sumRange(rows, 0, Number.MAX_SAFE_INTEGER)).toEqual({ expense: 50_000, income: 3_000_000, balance: 2_950_000 });
   });
 });
+
+describe('categorías ocultas que tienen movimientos', () => {
+  const hide = (db: TestDatabase, id: string) => db.runAsync('UPDATE categories SET deleted_at = ? WHERE id = ?', NOW, id);
+
+  test('una categoría oculta con movimientos se sigue listando (para editarla y ponerle presupuesto)', async () => {
+    const db = await freshDb();
+    await createTransaction(db, LIST, expense(40_000, { category_id: 'cat-hogar' }));
+    // Hidden behind the back of the movement, as old data or an imported backup can leave it.
+    await hide(db, 'cat-hogar');
+    await hide(db, 'cat-lujo');
+
+    const { listCategories } = jest.requireActual('../repo') as typeof import('../repo');
+    const ids = (await listCategories(db, LIST)).map((c) => c.id);
+    expect(ids).toContain('cat-hogar');
+    expect(ids).not.toContain('cat-lujo');
+    expect((await listCategories(db, LIST, 'expense')).map((c) => c.id)).toContain('cat-hogar');
+    expect((await listCategories(db, LIST, 'income')).map((c) => c.id)).not.toContain('cat-hogar');
+  });
+
+  test('guardar un movimiento en una categoría oculta la vuelve a mostrar', async () => {
+    const db = await freshDb();
+    await hide(db, 'cat-servicios');
+    await createTransaction(db, LIST, expense(90_000, { category_id: 'cat-servicios' }));
+    expect(await count(db, 'categories', "id = 'cat-servicios' AND deleted_at IS NULL")).toBe(1);
+  });
+
+  test('el presupuesto de una categoría así funciona de punta a punta', async () => {
+    const db = await freshDb();
+    await createTransaction(db, LIST, expense(40_000, { category_id: 'cat-hogar' }));
+    await hide(db, 'cat-hogar');
+    await setSetting(db, SETTING_BUDGET_ALERTS, 'true');
+    await setBudget(db, LIST, 'cat-hogar', 100_000);
+    const id = await createTransaction(db, LIST, expense(50_000, { category_id: 'cat-hogar' }));
+    expect(await budgetAlertFor(db, id, 0, NOW)).toMatchObject({ name: 'Hogar', percent: 90 });
+  });
+});

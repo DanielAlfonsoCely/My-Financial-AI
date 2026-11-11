@@ -20,7 +20,7 @@ import {
   summarizeAccounts,
 } from '../../lib/accounts';
 import { DEFAULT_CURRENCY, formatAmount, formatCompact, formatMoney } from '../../lib/money';
-import { colors, radius } from '../../theme';
+import { categoryPalette, colors, radius } from '../../theme';
 import { AppText } from '../AppText';
 import { IconButton } from '../IconButton';
 import { LoadError } from '../LoadError';
@@ -34,6 +34,12 @@ type ViewMode = 'general' | 'grouped';
 
 const openAccount = (id: string) => router.push({ pathname: '/account', params: { id } });
 const newAccount = (params: { groupId?: string; type?: string } = {}) => router.push({ pathname: '/account', params });
+
+/** One pastel per group, by its position, so the grouped chart is as readable as the general one. */
+const GROUP_COLORS = [4, 6, 5, 2, 1, 9, 11, 12, 0, 3].map((i) => categoryPalette[i]);
+const INVESTMENTS_COLOR = categoryPalette[13];
+const groupColor = (section: GroupSection, index: number) =>
+  section.system ? INVESTMENTS_COLOR : section.id === null ? colors.chip : GROUP_COLORS[index % GROUP_COLORS.length];
 
 const barHeight = (value: number, scale: number) =>
   MIN_HEIGHT + (MAX_HEIGHT - MIN_HEIGHT) * Math.min(1, Math.max(0, value) / Math.max(scale, 1));
@@ -64,6 +70,7 @@ export function AccountsPanel({ width }: { width: number }) {
   const assets = accounts.filter((a) => !isLiability(a)).sort((a, b) => Number(inPesos(b)) - Number(inPesos(a)) || b.balance - a.balance);
   const liabilities = accounts.filter(isLiability).sort((a, b) => b.balance - a.balance);
   const sections = groupAccounts(accounts, groups);
+  const sectionColor = new Map(sections.map((s, i) => [s.id, groupColor(s, i)]));
   const groupName = new Map(groups.map((g) => [g.id, g.name]));
 
   const setView = (next: ViewMode) => {
@@ -167,7 +174,7 @@ export function AccountsPanel({ width }: { width: number }) {
             : (
               <>
                 {sections.filter((s) => s.accounts.length > 0).sort((a, b) => b.total - a.total).map((s) => (
-                  <Column key={s.id ?? 'none'} emoji={s.emoji} value={s.total} detail={formatShare(s.share)} name={s.name} color={colors.chip} height={barHeight(s.total, columnScale)} />
+                  <Column key={s.id ?? 'none'} emoji={s.emoji} value={s.total} detail={formatShare(s.share)} name={s.name} color={sectionColor.get(s.id) ?? colors.chip} height={barHeight(s.total, columnScale)} />
                 ))}
                 {liabilities.length > 0 && <LiabilitiesColumn accounts={liabilities} debt={summary.debt} scale={columnScale} />}
               </>
@@ -177,7 +184,7 @@ export function AccountsPanel({ width }: { width: number }) {
         <SectionTitle title="Activos" value={formatMoney(summary.assets)} />
         {view === 'general'
           ? assets.map((a) => <AccountRow key={a.id} account={a} caption={a.group_id ? groupName.get(a.group_id) ?? 'Sin grupo' : 'Sin grupo'} />)
-          : sections.map((s) => <GroupBlock key={s.id ?? 'none'} section={s} />)}
+          : sections.map((s) => <GroupBlock key={s.id ?? 'none'} section={s} color={sectionColor.get(s.id) ?? colors.chip} />)}
         {view === 'grouped' && (
           <Pressable style={styles.addLine} onPress={() => router.push('/account-group')}>
             <Feather name="plus" size={16} color={colors.text} />
@@ -313,7 +320,7 @@ function LiabilitiesColumn({ accounts, debt, scale }: { accounts: AccountWithBal
   );
 }
 
-function GroupBlock({ section: s }: { section: GroupSection }) {
+function GroupBlock({ section: s, color }: { section: GroupSection; color: string }) {
   const editable = s.id !== null && !s.system;
   return (
     <View>
@@ -322,7 +329,9 @@ function GroupBlock({ section: s }: { section: GroupSection }) {
         disabled={!editable}
         onPress={() => router.push({ pathname: '/account-group', params: { id: s.id ?? '' } })}
       >
-        <AppText size={18}>{s.emoji || '🗂️'}</AppText>
+        <View style={[styles.groupBubble, { backgroundColor: color }]}>
+          <AppText size={16}>{s.emoji || '🗂️'}</AppText>
+        </View>
         <View style={styles.flex}>
           <View style={styles.groupTitle}>
             <AppText weight="bold" size={15}>
@@ -543,6 +552,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 6,
+  },
+  groupBubble: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   groupTitle: {
     flexDirection: 'row',

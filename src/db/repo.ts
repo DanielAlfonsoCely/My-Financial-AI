@@ -167,16 +167,34 @@ export async function deleteList(db: SQLiteDatabase, id: string): Promise<void> 
 
 // ---------- Categories ----------
 
+/**
+ * A category is visible when it is not hidden, or when it is hidden but has movements: one that
+ * was left out in "Elige tus categorías" and later got movements anyway (recurring copies, an
+ * imported backup, voice) must still be editable and take a budget, or its column on the home
+ * screen would be a dead end.
+ */
+const VISIBLE_CATEGORY = `(c.deleted_at IS NULL OR EXISTS (
+  SELECT 1 FROM transactions t WHERE t.category_id = c.id AND t.deleted_at IS NULL))`;
+
 export function listCategories(db: SQLiteDatabase, listId: string, kind?: Kind): Promise<Category[]> {
   if (kind) {
     return db.getAllAsync<Category>(
-      'SELECT * FROM categories WHERE deleted_at IS NULL AND list_id = ? AND kind = ? ORDER BY sort_order, name',
+      `SELECT c.* FROM categories c WHERE ${VISIBLE_CATEGORY} AND c.list_id = ? AND c.kind = ? ORDER BY c.sort_order, c.name`,
       listId, kind,
     );
   }
   return db.getAllAsync<Category>(
-    'SELECT * FROM categories WHERE deleted_at IS NULL AND list_id = ? ORDER BY sort_order, name',
+    `SELECT c.* FROM categories c WHERE ${VISIBLE_CATEGORY} AND c.list_id = ? ORDER BY c.sort_order, c.name`,
     listId,
+  );
+}
+
+/** Saving a movement in a hidden category brings the category back for good. */
+async function unhideCategory(db: SQLiteDatabase, categoryId: string | null): Promise<void> {
+  if (!categoryId) return;
+  await db.runAsync(
+    'UPDATE categories SET deleted_at = NULL, updated_at = ? WHERE id = ? AND deleted_at IS NOT NULL',
+    Date.now(), categoryId,
   );
 }
 
@@ -513,6 +531,7 @@ async function insertTransaction(db: SQLiteDatabase, listId: string, input: Tran
     now,
   );
   await addMissingTags(db, listId, tags);
+  await unhideCategory(db, money.category_id);
   return id;
 }
 
@@ -550,6 +569,7 @@ async function changeTransaction(db: SQLiteDatabase, id: string, input: Transact
     id,
   );
   await addMissingTags(db, current.list_id, tags);
+  await unhideCategory(db, money.category_id);
 }
 
 export async function updateTransaction(db: SQLiteDatabase, id: string, input: TransactionInput): Promise<void> {
