@@ -1,0 +1,42 @@
+{
+ "chart": {
+  "result": [
+   {
+    "meta": {
+     "currency": "COP",
+     "symbol": "COP=X",
+     "exchangeName": "CCY",
+     "fullExchangeName": "CCY",
+     "instrumentType": "CURRENCY",
+     "regularMarketTime": 1794369390,
+     "regularMarketPrice": 3296.84,
+     "chartPreviousClose": 3227.39,
+     "longName": "USD/COP",
+     "shortName": "USD/COP",
+     "gmtoffset": 0
+    },
+    "timestamp": [
+     1793836800,
+     1793923200,
+     1794182400,
+     1794268800,
+     1794355200
+    ],
+    "indicators": {
+     "quote": [
+      {
+       "close": [
+        3227.389892578125,
+        3238.3798828125,
+        3120.03955078125,
+        3274.3798828125,
+        3296.840087890625
+       ]
+      }
+     ]
+    }
+   }
+  ],
+  "error": null
+ }
+}

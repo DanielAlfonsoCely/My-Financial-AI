@@ -248,6 +248,72 @@ const MIGRATIONS: ((db: SQLiteDatabase) => Promise<void>)[] = [
       INVESTMENTS_GROUP_ID, now, now,
     );
   },
+
+  // v5: investments. What is held comes from the trades (one row per buy or sell, like the
+  // broker's report); prices and exchange rates are only a cache of what the price services said.
+  // Everything is an integer: quantity ×1e6, price and rate ×1e4, money in minor units.
+  async (db) => {
+    await db.execAsync(`
+      CREATE TABLE instruments (
+        id TEXT PRIMARY KEY NOT NULL,
+        symbol TEXT NOT NULL,
+        name TEXT NOT NULL DEFAULT '',
+        exchange TEXT NOT NULL DEFAULT '',
+        currency TEXT NOT NULL,
+        provider_symbol TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        deleted_at INTEGER
+      );
+      CREATE UNIQUE INDEX idx_instruments_provider_symbol ON instruments (provider_symbol) WHERE deleted_at IS NULL;
+
+      CREATE TABLE trades (
+        id TEXT PRIMARY KEY NOT NULL,
+        account_id TEXT NOT NULL REFERENCES accounts(id),
+        instrument_id TEXT NOT NULL REFERENCES instruments(id),
+        side TEXT NOT NULL CHECK (side IN ('buy', 'sell')),
+        quantity_e6 INTEGER NOT NULL CHECK (quantity_e6 > 0),
+        price_e4 INTEGER NOT NULL CHECK (price_e4 > 0),
+        fee_minor INTEGER NOT NULL DEFAULT 0 CHECK (fee_minor >= 0),
+        -- quantity × price in minor units, rounded once when the trade is saved.
+        gross_minor INTEGER NOT NULL CHECK (gross_minor >= 0),
+        currency TEXT NOT NULL,
+        executed_at INTEGER NOT NULL,
+        source TEXT NOT NULL DEFAULT 'manual',
+        source_ref TEXT,
+        note TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        deleted_at INTEGER
+      );
+      CREATE INDEX idx_trades_account ON trades (account_id, executed_at);
+      CREATE INDEX idx_trades_instrument ON trades (instrument_id);
+      -- The id of the operation in the broker's report: importing the same report twice adds nothing.
+      CREATE UNIQUE INDEX idx_trades_source_ref ON trades (source_ref) WHERE source_ref IS NOT NULL AND deleted_at IS NULL;
+
+      CREATE TABLE quotes (
+        instrument_id TEXT PRIMARY KEY NOT NULL REFERENCES instruments(id),
+        price_e4 INTEGER NOT NULL,
+        prev_close_e4 INTEGER,
+        as_of INTEGER NOT NULL,
+        provider TEXT NOT NULL
+      );
+
+      CREATE TABLE price_history (
+        instrument_id TEXT NOT NULL REFERENCES instruments(id),
+        day TEXT NOT NULL,
+        close_e4 INTEGER NOT NULL,
+        PRIMARY KEY (instrument_id, day)
+      );
+
+      CREATE TABLE fx_rates (
+        pair TEXT NOT NULL,
+        day TEXT NOT NULL,
+        rate_e4 INTEGER NOT NULL,
+        PRIMARY KEY (pair, day)
+      );
+    `);
+  },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

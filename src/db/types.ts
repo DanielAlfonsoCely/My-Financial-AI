@@ -123,6 +123,47 @@ export interface TransactionAmount {
   category_id: string | null;
 }
 
+/** Something that can be bought: a share, an ETF. `provider_symbol` is how the price services know it. */
+export interface Instrument extends Row {
+  symbol: string;
+  name: string;
+  exchange: string;
+  currency: string;
+  provider_symbol: string;
+}
+
+export type TradeSide = 'buy' | 'sell';
+
+/** One buy or one sell. A buy is a lot of its own; sells use up the oldest lots first (FIFO). */
+export interface Trade extends Row {
+  account_id: string;
+  instrument_id: string;
+  side: TradeSide;
+  /** Units ×1.000.000 (fractional shares). */
+  quantity_e6: number;
+  /** Price per unit ×10.000, in `currency`. */
+  price_e4: number;
+  /** Commission, in minor units of `currency`. */
+  fee_minor: number;
+  /** quantity × price, in minor units of `currency`. */
+  gross_minor: number;
+  currency: string;
+  /** Day and time of the order: it is what sets the price. */
+  executed_at: number;
+  source: string;
+  source_ref: string | null;
+  note: string | null;
+}
+
+/** Last price a service gave. A cache: it can be thrown away and fetched again. */
+export interface Quote {
+  instrument_id: string;
+  price_e4: number;
+  prev_close_e4: number | null;
+  as_of: number;
+  provider: string;
+}
+
 export interface Tag extends Row {
   list_id: string;
   name: string;

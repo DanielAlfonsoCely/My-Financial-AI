@@ -25,6 +25,16 @@ export function isInvestment(account: { type: AccountType; group_id: string | nu
   return account.type === 'broker' || account.type === 'asset' || account.group_id === INVESTMENTS_GROUP_ID;
 }
 
+/**
+ * What an account is worth in the app's currency, or null when it cannot be told: it is in another
+ * currency and no exchange rate has been fetched yet. Accounts that come from listValuedAccounts
+ * carry that value already (`base_balance`); plain ones only count when they are in pesos.
+ */
+export function baseValue(account: AccountWithBalance & { base_balance?: number | null }, currency = DEFAULT_CURRENCY): number | null {
+  if (account.base_balance !== undefined) return account.base_balance;
+  return account.currency === currency ? account.balance : null;
+}
+
 export interface AccountsSummary {
   /** Cash and banks. */
   available: number;
@@ -36,7 +46,7 @@ export interface AccountsSummary {
   assets: number;
   /** "Tu dinero hoy": assets − debt. */
   net: number;
-  /** Accounts in another currency: shown, but never added to the totals in pesos. */
+  /** Accounts in another currency without a known exchange rate: shown, but not added to the totals. */
   foreign: AccountWithBalance[];
 }
 
@@ -46,10 +56,11 @@ export function summarizeAccounts(accounts: AccountWithBalance[], currency = DEF
   let debt = 0;
   const foreign: AccountWithBalance[] = [];
   for (const a of accounts) {
-    if (a.currency !== currency) foreign.push(a);
-    else if (isLiability(a)) debt += a.balance;
-    else if (isInvestment(a)) invested += a.balance;
-    else available += a.balance;
+    const value = baseValue(a, currency);
+    if (value === null) foreign.push(a);
+    else if (isLiability(a)) debt += value;
+    else if (isInvestment(a)) invested += value;
+    else available += value;
   }
   const assets = available + invested;
   return { available, invested, debt, assets, net: assets - debt, foreign };
@@ -76,7 +87,7 @@ export interface GroupSection {
  */
 export function groupAccounts(accounts: AccountWithBalance[], groups: AccountGroup[], currency = DEFAULT_CURRENCY): GroupSection[] {
   const assets = accounts.filter((a) => !isLiability(a));
-  const sum = (list: AccountWithBalance[]) => list.filter((a) => a.currency === currency).reduce((s, a) => s + a.balance, 0);
+  const sum = (list: AccountWithBalance[]) => list.reduce((s, a) => s + (baseValue(a, currency) ?? 0), 0);
   const all = sum(assets);
   const known = new Set(groups.map((g) => g.id));
   const section = (id: string | null, name: string, emoji: string, system: boolean, list: AccountWithBalance[]): GroupSection => {

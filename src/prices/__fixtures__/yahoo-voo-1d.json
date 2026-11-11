@@ -1,0 +1,57 @@
+{
+ "chart": {
+  "result": [
+   {
+    "meta": {
+     "currency": "USD",
+     "symbol": "VOO",
+     "exchangeName": "PCX",
+     "fullExchangeName": "NYSEArca",
+     "instrumentType": "ETF",
+     "regularMarketTime": 1794344400,
+     "regularMarketPrice": 689.5,
+     "previousClose": 691.87,
+     "chartPreviousClose": 691.87,
+     "longName": "Vanguard S&P 500 ETF",
+     "shortName": "Vanguard S&P 500 ETF",
+     "gmtoffset": -18000
+    },
+    "timestamp": [
+     1794341100,
+     1794341400,
+     1794341700,
+     1794342000,
+     1794342300,
+     1794342600,
+     1794342900,
+     1794343200,
+     1794343500,
+     1794343800,
+     1794344100,
+     1794344400
+    ],
+    "indicators": {
+     "quote": [
+      {
+       "close": [
+        687.989990234375,
+        688.4299926757812,
+        688.5911254882812,
+        688.8499755859375,
+        688.840087890625,
+        688.780029296875,
+        688.7979125976562,
+        688.75,
+        689.6600952148438,
+        689.8300170898438,
+        689.4000244140625,
+        689.5
+       ]
+      }
+     ]
+    }
+   }
+  ],
+  "error": null
+ }
+}

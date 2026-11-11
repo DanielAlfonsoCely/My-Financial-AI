@@ -5,7 +5,7 @@ import { migrateDatabase, SCHEMA_VERSION } from '../migrations';
 import { DEFAULT_CATEGORIES, PERSONAL_LIST_ID } from '../seed';
 
 const T0 = 1_750_000_000_000;
-const LATEST = 4;
+const LATEST = 5;
 
 async function onboardingDone(db: SQLiteDatabase): Promise<string | null> {
   const row = await db.getFirstAsync<{ value: string }>("SELECT value FROM settings WHERE key = 'onboarding_done'");
@@ -86,7 +86,7 @@ function sameColumns(after: Record<string, unknown[]>, before: Record<string, un
 const V2_TABLES = ['lists', 'categories', 'transactions', 'tags', 'recurring', 'budgets', 'ai_rules'];
 
 describe('migraciones', () => {
-  test('la versión actual es la 4', () => {
+  test('la versión actual es la 5', () => {
     expect(SCHEMA_VERSION).toBe(LATEST);
   });
 
@@ -218,7 +218,7 @@ describe('migraciones', () => {
       expect(await userVersion(db)).toBe(3);
       const before = await snapshot(db, [...V2_TABLES, 'settings']);
 
-      await migrateDatabase(db);
+      await migrateDatabase(db, 4);
 
       expect(await userVersion(db)).toBe(4);
       expect(sameColumns(await snapshot(db, [...V2_TABLES, 'settings']), before)).toEqual(before);
@@ -295,6 +295,64 @@ describe('migraciones', () => {
       await expect(insert('con-categoria', 'transfer', 'a1', 'a2', 'cat-mercado')).rejects.toThrow();
       await expect(insert('cuenta-fantasma', 'expense', 'no-existe', null)).rejects.toThrow();
       expect(await count(db, 'transactions')).toBe(2);
+    });
+  });
+
+  describe('v5: inversiones', () => {
+    test('desde v4 con cuentas, transferencias y movimientos: nada cambia y aparecen las tablas nuevas', async () => {
+      const db = openTestDatabase();
+      await migrateDatabase(db, 2);
+      await fillV2(db);
+      await migrateDatabase(db, 4);
+      for (const [id, type, currency] of [['dav', 'savings', 'COP'], ['xtb', 'broker', 'USD']]) {
+        await db.runAsync("INSERT INTO accounts (id, name, color, type, currency, opening_balance, created_at, updated_at) VALUES (?, ?, '#fff', ?, ?, 1000, ?, ?)", id, id, type, currency, T0, T0);
+      }
+      await db.runAsync(
+        `INSERT INTO transactions (id, kind, amount, currency, account_id, to_account_id, to_amount, occurred_at, created_at, updated_at)
+         VALUES ('dep', 'transfer', 2050000, 'COP', 'dav', 'xtb', 50000, ?, ?, ?)`,
+        T0, T0, T0,
+      );
+      const tables = [...V2_TABLES, 'settings', 'accounts', 'account_groups'];
+      const before = await snapshot(db, tables);
+
+      await migrateDatabase(db);
+
+      expect(await userVersion(db)).toBe(5);
+      expect(await snapshot(db, tables)).toEqual(before);
+      for (const table of ['instruments', 'trades', 'quotes', 'price_history', 'fx_rates']) expect(await count(db, table)).toBe(0);
+    });
+
+    test('desde v1 con datos llega a v5', async () => {
+      const db = openTestDatabase();
+      await migrateDatabase(db, 1);
+      await fillV1(db);
+      await migrateDatabase(db);
+      expect(await userVersion(db)).toBe(5);
+      expect(await count(db, 'transactions')).toBe(4);
+      expect(await onboardingDone(db)).toBe('true');
+    });
+
+    test('la base hace cumplir las reglas de una operación y no repite las importadas', async () => {
+      const db = openTestDatabase();
+      await migrateDatabase(db);
+      await db.runAsync("INSERT INTO accounts (id, name, color, type, currency, created_at, updated_at) VALUES ('xtb', 'XTB', '#fff', 'broker', 'USD', ?, ?)", T0, T0);
+      await db.runAsync("INSERT INTO instruments (id, symbol, currency, provider_symbol, created_at, updated_at) VALUES ('voo', 'VOO', 'USD', 'VOO', ?, ?)", T0, T0);
+      const insert = (id: string, side: string, quantity: number, ref: string | null, instrument = 'voo') =>
+        db.runAsync(
+          `INSERT INTO trades (id, account_id, instrument_id, side, quantity_e6, price_e4, gross_minor, currency, executed_at, source_ref, created_at, updated_at)
+           VALUES (?, 'xtb', ?, ?, ?, 5982000, 100, 'USD', ?, ?, ?, ?)`,
+          id, instrument, side, quantity, T0, ref, T0, T0,
+        );
+      await insert('t1', 'buy', 351200, 'xtb-1');
+      await expect(insert('t2', 'buy', 351200, 'xtb-1')).rejects.toThrow();
+      await expect(insert('t3', 'hold', 1, null)).rejects.toThrow();
+      await expect(insert('t4', 'buy', 0, null)).rejects.toThrow();
+      await expect(insert('t5', 'buy', 1, null, 'fantasma')).rejects.toThrow();
+      await expect(db.runAsync("INSERT INTO instruments (id, symbol, currency, provider_symbol, created_at, updated_at) VALUES ('voo2', 'VOO', 'USD', 'VOO', ?, ?)", T0, T0)).rejects.toThrow();
+      // Manual trades have no source_ref and never collide.
+      await insert('t6', 'buy', 1, null);
+      await insert('t7', 'buy', 1, null);
+      expect(await count(db, 'trades')).toBe(3);
     });
   });
 });

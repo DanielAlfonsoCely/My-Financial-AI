@@ -1128,6 +1128,9 @@ export async function updateAccount(db: SQLiteDatabase, id: string, input: Accou
 export async function deleteAccount(db: SQLiteDatabase, id: string): Promise<void> {
   const now = Date.now();
   await writeTx(db, async () => {
+    // Its positions would vanish from the totals without a trace: sell or delete the trades first.
+    const held = await db.getFirstAsync('SELECT 1 FROM trades WHERE account_id = ? AND deleted_at IS NULL', id);
+    if (held) throw new Error('Esta cuenta tiene operaciones de inversión. Bórralas primero desde Inversiones.');
     await db.runAsync('UPDATE accounts SET deleted_at = ?, updated_at = ? WHERE id = ?', now, now, id);
     await db.runAsync('UPDATE recurring SET account_id = NULL, updated_at = ? WHERE account_id = ?', now, id);
     await db.runAsync('DELETE FROM settings WHERE key = ? AND value = ?', SETTING_LAST_ACCOUNT, id);
@@ -1140,7 +1143,10 @@ const SELECT_ACCOUNTS_WITH_DELTA = `
     COALESCE((SELECT SUM(CASE t.kind WHEN 'income' THEN t.amount ELSE -t.amount END)
               FROM transactions t WHERE t.account_id = a.id AND t.deleted_at IS NULL), 0)
     + COALESCE((SELECT SUM(COALESCE(t.to_amount, t.amount))
-                FROM transactions t WHERE t.to_account_id = a.id AND t.deleted_at IS NULL), 0) AS delta
+                FROM transactions t WHERE t.to_account_id = a.id AND t.deleted_at IS NULL), 0)
+    -- Free cash of a broker account: buying takes it out, selling brings it back.
+    + COALESCE((SELECT SUM(CASE tr.side WHEN 'sell' THEN tr.gross_minor - tr.fee_minor ELSE -(tr.gross_minor + tr.fee_minor) END)
+                FROM trades tr WHERE tr.account_id = a.id AND tr.deleted_at IS NULL), 0) AS delta
   FROM accounts a
 `;
 
