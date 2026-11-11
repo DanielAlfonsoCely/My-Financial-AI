@@ -39,6 +39,28 @@ Actualizar al cerrar cada tarea: qué se hizo, en qué rama/PR y qué quedó pen
 
 ## Bitácora
 
+### 2026-11-10 · Bloque D (inversiones) EN CURSO, rama `bloque-d-inversiones` (local, sin push)
+
+Sale de `arreglos-presupuestos-cuentas` (subida, sin PR: categorías ocultas con movimientos, colores de la vista
+agrupada, texto del umbral).
+
+Hecho y probado (202 tests en verde, `tsc` limpio):
+- Migración **v5** (`instruments`, `trades`, `quotes`, `price_history`, `fx_rates`), probada desde v1 y v4 con datos.
+- `src/lib/portfolio.ts`: lotes FIFO, valor, ganancia, serie del gráfico, conversión de moneda (todo en enteros).
+- `src/db/investments.ts`: instrumentos, `saveTrade` / `deleteTrade` (no deja vender lo que no hay), `importTrades`
+  (sin duplicar por `source_ref`), caché de cotizaciones, histórico y TRM, `getPortfolio`, `listValuedAccounts`.
+- El saldo libre del bróker ya cuenta compras y ventas; `summarizeAccounts` suma el bróker en pesos si hay TRM.
+- `react-native-svg` instalado (viene en Expo Go). Respuestas reales de Yahoo guardadas en `src/prices/__fixtures__/`.
+
+Falta:
+- `src/prices/`: `PriceProvider` con Yahoo (verificado que responde: `/v8/finance/chart/{symbol}`, `COP=X`,
+  `/v1/finance/search`), Finnhub y Twelve Data de respaldo, claves en SecureStore, refresco cada 15 min.
+- Pantallas `app/investments.tsx`, `app/trade.tsx`, gráfico Día/Semana/Mes/Año/Todo, y que el panel de cuentas use
+  `listValuedAccounts` y abra Inversiones al tocar el bróker.
+- Respaldo formato 4 (instrumentos y operaciones), posiciones en los datos de prueba y "Actualizar precios ahora".
+- `app/import-xtb.tsx`: **bloqueado hasta tener un reporte real de XTB** (pedírselo a Daniel).
+- `/verificar`, docs (`CLAUDE.md`, `plan.md`, README) y push.
+
 ### 2026-11-10 · Ramas subidas
 - Daniel le dio el permiso `workflow` al token: subieron el commit del CI de `bloque-b-auditoria` y la rama
   `bloque-c-cuentas` completa.
