@@ -7,7 +7,7 @@ Actualizar al cerrar cada tarea: qué se hizo, en qué rama/PR y qué quedó pen
 | Bloque | Contenido | Estado | Rama / PR |
 |---|---|---|---|
 | B | Auditoría (15 puntos de `plan.md` B), migración v3, tests, lint y CI | ✅ Hecho, falta probar en el A34 | `bloque-b-auditoria` (subida, sin PR) |
-| C | Cuentas reales con grupos, vista general/agrupada, activos/pasivos, transferencias (migración v4) | ✅ Hecho, falta probar en el A34 | `bloque-c-cuentas` (local, sin push ni PR) |
+| C | Cuentas reales con grupos, vista general/agrupada, activos/pasivos, transferencias (migración v4) | ✅ Hecho, falta probar en el A34 | `bloque-c-cuentas` (subida, sin PR) |
 | A | Identidad (solo piel): acento lila/azul, Figtree + Bricolage, sin componentes nativos, sin hora en movimientos, Apariencia | Diseñado, **siguiente** | — |
 | D | Inversiones XTB: importador + precios gratis + gráfico (migración v5) | Diseñado, falta reporte real de XTB | — |
 | E | Botón de datos de prueba (solo `__DEV__`) | ✅ Primera versión (sin inversiones); crece con D | `bloque-c-cuentas` |
@@ -24,8 +24,6 @@ Actualizar al cerrar cada tarea: qué se hizo, en qué rama/PR y qué quedó pen
   - Guardar un gasto que cruce el umbral de un presupuesto (alertas activadas): sale el aviso después del de guardado.
   - Con PIN: la app se ve tapada en recientes y no deja capturar; apagar "Ocultar en recientes" lo revierte.
   - Movimiento con repetición: crear, cambiar el monto, pasarlo a "Una vez".
-- Subir el commit del workflow de CI: darle el permiso `workflow` al token de GitHub del PC (o usar SSH) y
-  `git push` en `bloque-b-auditoria`. Hasta entonces el CI no corre en GitHub.
 - **Bloque C en el A34** (exportar un respaldo JSON antes; la migración v4 reconstruye la tabla de movimientos):
   - Abrir la rama en Expo Go: mismos movimientos y totales que antes, todos "sin cuenta".
   - Configuración → Desarrollo → "Poblar con datos de prueba". Revisar el panel de cuentas en General y Agrupada,
@@ -35,11 +33,15 @@ Actualizar al cerrar cada tarea: qué se hizo, en qué rama/PR y qué quedó pen
   - Por texto: "retiré 80 mil de Davivienda", "pagué la tarjeta con Davivienda 300 mil", "taxi 12 mil con Nequi".
   - Con letra grande del sistema: el segmento Gasto / Ingreso / Transferir puede quedar apretado junto a los botones.
   - "Borrar datos de prueba" y confirmar que todo vuelve a como estaba.
-- Subir `bloque-c-cuentas`: depende del mismo permiso `workflow` del token (la rama lleva el commit del CI).
-- Abrir los PR en GitHub (no hay `gh` en el PC): `rediseno-v2-seguridad` → `main` y `bloque-b-auditoria` encima.
+- Abrir los PR en GitHub (no hay `gh` en el PC), en cadena: `rediseno-v2-seguridad` → `main`,
+  `bloque-b-auditoria` → `rediseno-v2-seguridad` y `bloque-c-cuentas` → `bloque-b-auditoria`.
   Después de fusionar, etiquetar la versión (propuesta: `v0.2.0`).
 
 ## Bitácora
+
+### 2026-11-10 · Ramas subidas
+- Daniel le dio el permiso `workflow` al token: subieron el commit del CI de `bloque-b-auditoria` y la rama
+  `bloque-c-cuentas` completa.
 
 ### 2026-11-10 · Bloque C (cuentas y transferencias), rama `bloque-c-cuentas`
 

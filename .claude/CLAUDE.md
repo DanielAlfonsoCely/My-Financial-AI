@@ -43,7 +43,7 @@ Ver `docs/estado.md` (se actualiza al cerrar cada tarea). Resumen al 10 nov 2026
   hardcodeada**, migración v2 (listas, etiquetas, recurrentes, presupuestos, reglas de IA), onboarding, búsqueda,
   hoja de movimiento, voz y chat con Gemini, CSV.
 - **`bloque-b-auditoria`** (sale de la anterior, sin PR): bloque B completo, migración v3, tests, lint y CI.
-- **`bloque-c-cuentas`** (sale de la anterior, sin PR ni push): bloque C completo (cuentas reales, grupos,
+- **`bloque-c-cuentas`** (sale de la anterior, subida, sin PR): bloque C completo (cuentas reales, grupos,
   transferencias, migración v4, respaldo formato 3) y la primera versión de los datos de prueba (E).
 - Siguiente: bloque A de `docs/plan.md` (se saltó a pedido de Daniel), en una rama nueva desde `bloque-c-cuentas`.
 - Pendiente de probar en el A34: deslizar entre paneles, huella, cursor del monto, espacio del teclado, voz con clave
